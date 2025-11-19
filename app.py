@@ -98,6 +98,8 @@ def login():
                 return {'success': True, 'result': result}
             except Exception as e:
                 auth_in_progress = False
+                if loopback_server:
+                    threading.Timer(2.0, loopback_server.stop).start()
                 return {'success': False, 'error': str(e)}
         
         loopback_server = LoopbackServer(

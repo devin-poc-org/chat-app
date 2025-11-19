@@ -46,9 +46,10 @@ class LoopbackAuthHandler(http.server.BaseHTTPRequestHandler):
                     self.send_error_response("Missing code or state parameter")
                     return
                 
-                if self.callback_handler:
+                handler = type(self).callback_handler
+                if handler:
                     try:
-                        result = self.callback_handler(code, state)
+                        result = handler(code, state)
                         if result.get('success'):
                             self.send_success_response()
                         else:
