@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OCA Chat - Oracle Code Assist</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -59,11 +64,19 @@
             padding: 5px 12px;
             border-radius: 12px;
             font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .badge:hover {
+            background: rgba(255, 255, 255, 0.3);
         }
 
         .auth-section {
             text-align: center;
             padding: 60px 30px;
+            max-width: 600px;
+            margin: 0 auto;
         }
 
         .auth-section h2 {
@@ -74,6 +87,42 @@
         .auth-section p {
             color: #666;
             margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #999;
+            font-size: 12px;
         }
 
         .btn {
@@ -92,6 +141,12 @@
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
 
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .btn-secondary {
             background: #e0e0e0;
             color: #333;
@@ -100,6 +155,11 @@
         .btn-secondary:hover {
             background: #d0d0d0;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
         }
 
         .chat-container {
@@ -152,12 +212,25 @@
             border-radius: 18px;
             line-height: 1.6;
             word-wrap: break-word;
+            position: relative;
         }
 
         .message.user .message-content {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border-bottom-right-radius: 4px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .message.user .message-content:hover {
+            opacity: 0.9;
+        }
+
+        .message.user .message-content.editing {
+            background: white;
+            color: #333;
+            border: 2px solid #667eea;
         }
 
         .message.assistant .message-content {
@@ -165,6 +238,139 @@
             color: #333;
             border-bottom-left-radius: 4px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .message-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .copy-btn {
+            padding: 4px 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: background 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #5568d3;
+        }
+
+        .copy-btn.copied {
+            background: #4caf50;
+        }
+
+        .edit-textarea {
+            width: 100%;
+            min-height: 60px;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: vertical;
+        }
+
+        .edit-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .message-content pre {
+            margin: 10px 0;
+            position: relative;
+            background: #1e1e1e;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .message-content code {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+        }
+
+        .message-content pre code {
+            display: block;
+            padding: 15px;
+            overflow-x: auto;
+        }
+
+        .message-content :not(pre) > code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #e83e8c;
+        }
+
+        .code-block-wrapper {
+            position: relative;
+            margin: 10px 0;
+        }
+
+        .code-block-header {
+            background: #2d2d2d;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+        }
+
+        .code-block-language {
+            color: #888;
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .code-copy-btn {
+            padding: 4px 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: background 0.2s;
+        }
+
+        .code-copy-btn:hover {
+            background: #5568d3;
+        }
+
+        .code-copy-btn.copied {
+            background: #4caf50;
+        }
+
+        .opc-request-id {
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .opc-label {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .opc-value {
+            color: #333;
+            flex: 1;
+            word-break: break-all;
         }
 
         .input-container {
@@ -200,11 +406,6 @@
         #sendButton {
             padding: 15px 30px;
             white-space: nowrap;
-        }
-
-        #sendButton:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
         }
 
         .typing-indicator {
@@ -279,10 +480,62 @@
             padding: 8px;
             border-radius: 8px;
             transition: background 0.2s;
+            font-size: 18px;
         }
 
         .icon-btn:hover {
             background: rgba(255, 255, 255, 0.1);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+            color: #333;
+            font-size: 20px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+
+        .modal-close:hover {
+            color: #333;
         }
 
         @media (max-width: 768px) {
@@ -308,10 +561,11 @@
         <div class="header">
             <h1>🤖 OCA Chat</h1>
             <div class="header-info">
-                <span class="badge">{{ oca_mode|upper }}</span>
-                <span class="badge">{{ model_id }}</span>
                 {% if authenticated %}
+                <span class="badge" onclick="showSettingsModal()" title="Click to change">{{ oca_mode|upper }}</span>
+                <span class="badge" onclick="showSettingsModal()" title="Click to change">{{ model_id }}</span>
                 <div class="controls">
+                    <button class="icon-btn" onclick="showSettingsModal()" title="Settings">⚙️</button>
                     <button class="icon-btn" onclick="clearChat()" title="Clear Chat">🗑️</button>
                     <button class="icon-btn" onclick="logout()" title="Logout">🚪</button>
                 </div>
@@ -322,7 +576,29 @@
         {% if not authenticated %}
         <div class="auth-section">
             <h2>Welcome to OCA Chat</h2>
-            <p>Please authenticate with Oracle Code Assist to start chatting</p>
+            <p>Please configure and authenticate with Oracle Code Assist to start chatting</p>
+            
+            <div class="form-group">
+                <label for="ocaMode">OCA Mode</label>
+                <select id="ocaMode">
+                    <option value="internal">Internal</option>
+                    <option value="external">External</option>
+                </select>
+                <small>Select internal for Oracle internal network or external for public access</small>
+            </div>
+
+            <div class="form-group">
+                <label for="modelId">Model ID</label>
+                <input type="text" id="modelId" value="oca/gpt-4.1" placeholder="e.g., oca/gpt-4.1">
+                <small>Enter the model ID you want to use</small>
+            </div>
+
+            <div class="form-group">
+                <label for="baseUrl">OCA Base URL (Optional)</label>
+                <input type="text" id="baseUrl" placeholder="Leave empty for default">
+                <small>Custom OCA endpoint URL (leave empty to use default for selected mode)</small>
+            </div>
+
             <button class="btn" onclick="login()">Login with OCA</button>
         </div>
         {% else %}
@@ -348,18 +624,64 @@
         {% endif %}
     </div>
 
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button class="modal-close" onclick="closeSettingsModal()">×</button>
+            </div>
+            
+            <div class="form-group">
+                <label for="settingsModelId">Model ID</label>
+                <input type="text" id="settingsModelId" value="{{ model_id }}" placeholder="e.g., oca/gpt-4.1">
+                <small>Enter the model ID you want to use</small>
+            </div>
+
+            <div class="form-group">
+                <label for="settingsBaseUrl">OCA Base URL</label>
+                <input type="text" id="settingsBaseUrl" placeholder="Current: {{ oca_base_url }}">
+                <small>Custom OCA endpoint URL (leave empty to keep current)</small>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn" onclick="saveSettings()">Save Settings</button>
+                <button class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const conversationId = 'default';
         let isProcessing = false;
+        let conversationHistory = [];
+        let currentEditingIndex = null;
+
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    return hljs.highlight(code, { language: lang }).value;
+                }
+                return hljs.highlightAuto(code).value;
+            },
+            breaks: true,
+            gfm: true
+        });
 
         async function login() {
+            const mode = document.getElementById('ocaMode').value;
+            const modelId = document.getElementById('modelId').value.trim();
+            const baseUrl = document.getElementById('baseUrl').value.trim();
+
             try {
-                const response = await fetch('/api/auth/login');
+                const params = new URLSearchParams();
+                if (mode) params.append('mode', mode);
+                if (modelId) params.append('model_id', modelId);
+                if (baseUrl) params.append('base_url', baseUrl);
+
+                const response = await fetch(`/api/auth/login?${params.toString()}`);
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Browser will be opened automatically by the server
-                    // Start polling for authentication status
                     pollAuthStatus();
                 } else {
                     alert('Failed to initiate login: ' + (data.error || 'Unknown error'));
@@ -378,7 +700,6 @@
                     
                     if (data.authenticated) {
                         clearInterval(pollInterval);
-                        // Reload the page to show authenticated state
                         window.location.reload();
                     }
                 } catch (error) {
@@ -386,7 +707,6 @@
                 }
             }, 500);
             
-            // Stop polling after 2 minutes
             setTimeout(() => clearInterval(pollInterval), 120000);
         }
 
@@ -401,6 +721,7 @@
             if (confirm('Are you sure you want to clear the chat history?')) {
                 fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' })
                     .then(() => {
+                        conversationHistory = [];
                         document.getElementById('messages').innerHTML = `
                             <div class="empty-state">
                                 <h3>👋 Hello!</h3>
@@ -411,6 +732,39 @@
             }
         }
 
+        function showSettingsModal() {
+            document.getElementById('settingsModal').classList.add('active');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.remove('active');
+        }
+
+        async function saveSettings() {
+            const modelId = document.getElementById('settingsModelId').value.trim();
+            const baseUrl = document.getElementById('settingsBaseUrl').value.trim();
+
+            try {
+                const params = new URLSearchParams();
+                if (modelId) params.append('model_id', modelId);
+                if (baseUrl) params.append('base_url', baseUrl);
+
+                const response = await fetch(`/api/settings?${params.toString()}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    alert('Settings saved! Reloading page...');
+                    window.location.reload();
+                } else {
+                    alert('Failed to save settings');
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                alert('Failed to save settings: ' + error.message);
+            }
+        }
+
         function handleKeyPress(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -418,10 +772,77 @@
             }
         }
 
-        function addMessage(role, content) {
+        function renderMarkdown(content) {
+            const html = marked.parse(content);
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+
+            const codeBlocks = tempDiv.querySelectorAll('pre code');
+            codeBlocks.forEach((block, index) => {
+                const pre = block.parentElement;
+                const language = block.className.match(/language-(\w+)/)?.[1] || 'text';
+                
+                const wrapper = document.createElement('div');
+                wrapper.className = 'code-block-wrapper';
+                
+                const header = document.createElement('div');
+                header.className = 'code-block-header';
+                header.innerHTML = `
+                    <span class="code-block-language">${language}</span>
+                    <button class="code-copy-btn" onclick="copyCode(this, ${index})">Copy</button>
+                `;
+                
+                pre.parentNode.insertBefore(wrapper, pre);
+                wrapper.appendChild(header);
+                wrapper.appendChild(pre);
+                
+                pre.dataset.code = block.textContent;
+            });
+
+            return tempDiv.innerHTML;
+        }
+
+        function copyCode(button, index) {
+            const wrapper = button.closest('.code-block-wrapper');
+            const pre = wrapper.querySelector('pre');
+            const code = pre.dataset.code;
+            
+            navigator.clipboard.writeText(code).then(() => {
+                button.textContent = 'Copied!';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = 'Copy';
+                    button.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        function copyFullResponse(button, content) {
+            navigator.clipboard.writeText(content).then(() => {
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        function copyOpcRequestId(button, opcId) {
+            navigator.clipboard.writeText(opcId).then(() => {
+                button.textContent = 'Copied!';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = 'Copy';
+                    button.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        function addMessage(role, content, opcRequestId = null) {
             const messagesDiv = document.getElementById('messages');
             
-            // Remove empty state if it exists
             const emptyState = messagesDiv.querySelector('.empty-state');
             if (emptyState) {
                 emptyState.remove();
@@ -429,6 +850,7 @@
 
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}`;
+            messageDiv.dataset.index = conversationHistory.length;
             
             const avatar = document.createElement('div');
             avatar.className = 'message-avatar';
@@ -436,16 +858,109 @@
             
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-            contentDiv.textContent = content;
+            
+            if (role === 'user') {
+                contentDiv.textContent = content;
+                contentDiv.onclick = () => editMessage(messageDiv.dataset.index);
+            } else {
+                contentDiv.innerHTML = renderMarkdown(content);
+                
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'message-actions';
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-btn';
+                copyBtn.textContent = 'Copy Response';
+                copyBtn.onclick = () => copyFullResponse(copyBtn, content);
+                actionsDiv.appendChild(copyBtn);
+                contentDiv.appendChild(actionsDiv);
+                
+                if (opcRequestId) {
+                    const opcDiv = document.createElement('div');
+                    opcDiv.className = 'opc-request-id';
+                    opcDiv.innerHTML = `
+                        <span class="opc-label">opc-request-id:</span>
+                        <span class="opc-value">${opcRequestId}</span>
+                        <button class="copy-btn" onclick="copyOpcRequestId(this, '${opcRequestId}')">Copy</button>
+                    `;
+                    contentDiv.appendChild(opcDiv);
+                }
+            }
             
             messageDiv.appendChild(avatar);
             messageDiv.appendChild(contentDiv);
             messagesDiv.appendChild(messageDiv);
             
-            // Scroll to bottom
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
             
+            conversationHistory.push({ role, content });
+            
             return contentDiv;
+        }
+
+        function editMessage(index) {
+            if (isProcessing || currentEditingIndex !== null) return;
+            
+            const messageDiv = document.querySelector(`.message[data-index="${index}"]`);
+            if (!messageDiv || !messageDiv.classList.contains('user')) return;
+            
+            currentEditingIndex = parseInt(index);
+            const contentDiv = messageDiv.querySelector('.message-content');
+            const originalContent = conversationHistory[index].content;
+            
+            contentDiv.classList.add('editing');
+            contentDiv.innerHTML = `
+                <textarea class="edit-textarea">${originalContent}</textarea>
+                <div class="edit-actions">
+                    <button class="btn btn-small" onclick="saveEdit(${index})">Save & Resend</button>
+                    <button class="btn btn-secondary btn-small" onclick="cancelEdit(${index})">Cancel</button>
+                </div>
+            `;
+            
+            const textarea = contentDiv.querySelector('textarea');
+            textarea.focus();
+            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        }
+
+        async function saveEdit(index) {
+            const messageDiv = document.querySelector(`.message[data-index="${index}"]`);
+            const textarea = messageDiv.querySelector('textarea');
+            const newContent = textarea.value.trim();
+            
+            if (!newContent) {
+                cancelEdit(index);
+                return;
+            }
+            
+            conversationHistory[index].content = newContent;
+            
+            const messagesDiv = document.getElementById('messages');
+            const messagesToRemove = messagesDiv.querySelectorAll(`.message[data-index]`);
+            messagesToRemove.forEach(msg => {
+                const msgIndex = parseInt(msg.dataset.index);
+                if (msgIndex >= index) {
+                    msg.remove();
+                }
+            });
+            
+            conversationHistory = conversationHistory.slice(0, index + 1);
+            
+            addMessage('user', newContent);
+            
+            currentEditingIndex = null;
+            
+            await sendMessageWithHistory();
+        }
+
+        function cancelEdit(index) {
+            const messageDiv = document.querySelector(`.message[data-index="${index}"]`);
+            const contentDiv = messageDiv.querySelector('.message-content');
+            const originalContent = conversationHistory[index].content;
+            
+            contentDiv.classList.remove('editing');
+            contentDiv.textContent = originalContent;
+            contentDiv.onclick = () => editMessage(index);
+            
+            currentEditingIndex = null;
         }
 
         function showTypingIndicator() {
@@ -472,37 +987,6 @@
             }
         }
 
-        function addOpcRequestIdButton(messageDiv, opcRequestId) {
-            const opcDiv = document.createElement('div');
-            opcDiv.className = 'opc-request-id';
-            opcDiv.style.cssText = 'margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px; font-family: monospace;';
-            
-            const label = document.createElement('span');
-            label.textContent = 'opc-request-id: ';
-            label.style.color = '#666';
-            
-            const idSpan = document.createElement('span');
-            idSpan.textContent = opcRequestId;
-            idSpan.style.color = '#333';
-            
-            const copyBtn = document.createElement('button');
-            copyBtn.textContent = 'Copy';
-            copyBtn.style.cssText = 'margin-left: 8px; padding: 4px 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;';
-            copyBtn.onclick = () => {
-                navigator.clipboard.writeText(opcRequestId).then(() => {
-                    copyBtn.textContent = 'Copied!';
-                    setTimeout(() => {
-                        copyBtn.textContent = 'Copy';
-                    }, 2000);
-                });
-            };
-            
-            opcDiv.appendChild(label);
-            opcDiv.appendChild(idSpan);
-            opcDiv.appendChild(copyBtn);
-            messageDiv.appendChild(opcDiv);
-        }
-
         async function sendMessage() {
             if (isProcessing) return;
 
@@ -511,16 +995,18 @@
             
             if (!message) return;
 
-            // Disable input
+            addMessage('user', message);
+            input.value = '';
+            
+            await sendMessageWithHistory();
+        }
+
+        async function sendMessageWithHistory() {
             isProcessing = true;
+            const input = document.getElementById('messageInput');
             input.disabled = true;
             document.getElementById('sendButton').disabled = true;
 
-            // Add user message
-            addMessage('user', message);
-            input.value = '';
-
-            // Show typing indicator
             showTypingIndicator();
 
             try {
@@ -530,7 +1016,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        message: message,
+                        message: conversationHistory[conversationHistory.length - 1].content,
                         conversation_id: conversationId
                     })
                 });
@@ -539,15 +1025,12 @@
                     throw new Error('Failed to send message');
                 }
 
-                // Hide typing indicator
                 hideTypingIndicator();
 
-                // Create assistant message container
                 let assistantContent = '';
                 let opcRequestId = null;
-                const contentDiv = addMessage('assistant', '');
+                let contentDiv = null;
 
-                // Read stream
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
 
@@ -566,19 +1049,47 @@
                                 opcRequestId = data.opc_request_id;
                             } else if (data.type === 'content') {
                                 assistantContent += data.content;
-                                contentDiv.textContent = assistantContent;
-                                // Scroll to bottom
+                                
+                                if (!contentDiv) {
+                                    contentDiv = addMessage('assistant', assistantContent);
+                                } else {
+                                    contentDiv.innerHTML = renderMarkdown(assistantContent);
+                                    
+                                    const actionsDiv = document.createElement('div');
+                                    actionsDiv.className = 'message-actions';
+                                    const copyBtn = document.createElement('button');
+                                    copyBtn.className = 'copy-btn';
+                                    copyBtn.textContent = 'Copy Response';
+                                    copyBtn.onclick = () => copyFullResponse(copyBtn, assistantContent);
+                                    actionsDiv.appendChild(copyBtn);
+                                    contentDiv.appendChild(actionsDiv);
+                                }
+                                
                                 const messagesDiv = document.getElementById('messages');
                                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
                             } else if (data.type === 'error') {
-                                contentDiv.textContent = `Error: ${data.error}`;
-                                contentDiv.style.color = 'red';
+                                if (!contentDiv) {
+                                    contentDiv = addMessage('assistant', `Error: ${data.error}`);
+                                } else {
+                                    contentDiv.innerHTML = `<span style="color: red;">Error: ${data.error}</span>`;
+                                }
                             } else if (data.type === 'done') {
-                                console.log('Usage:', data.usage);
                                 if (opcRequestId || data.opc_request_id) {
                                     const finalOpcId = opcRequestId || data.opc_request_id;
-                                    addOpcRequestIdButton(contentDiv.parentElement, finalOpcId);
+                                    const opcDiv = document.createElement('div');
+                                    opcDiv.className = 'opc-request-id';
+                                    opcDiv.innerHTML = `
+                                        <span class="opc-label">opc-request-id:</span>
+                                        <span class="opc-value">${finalOpcId}</span>
+                                        <button class="copy-btn" onclick="copyOpcRequestId(this, '${finalOpcId}')">Copy</button>
+                                    `;
+                                    contentDiv.appendChild(opcDiv);
                                 }
+                                
+                                conversationHistory[conversationHistory.length - 1] = {
+                                    role: 'assistant',
+                                    content: assistantContent
+                                };
                             }
                         }
                     }
@@ -588,7 +1099,6 @@
                 hideTypingIndicator();
                 addMessage('assistant', `Error: ${error.message}`);
             } finally {
-                // Re-enable input
                 isProcessing = false;
                 input.disabled = false;
                 document.getElementById('sendButton').disabled = false;
@@ -596,7 +1106,6 @@
             }
         }
 
-        // Auto-resize textarea
         const textarea = document.getElementById('messageInput');
         if (textarea) {
             textarea.addEventListener('input', function() {
@@ -605,7 +1114,6 @@
             });
         }
 
-        // Load conversation history on page load
         {% if authenticated %}
         window.addEventListener('load', async () => {
             try {

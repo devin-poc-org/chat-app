@@ -34,15 +34,22 @@ OCA_CONFIG = {
     }
 }
 
-OCA_MODE = os.getenv('OCA_MODE', 'internal')
-OCA_BASE_URL = os.getenv(
-    f'{OCA_MODE.upper()}_OCA_BASE_URL',
-    'https://code-internal.aiservice.us-chicago-1.oci.oraclecloud.com/20250206/app/litellm'
-)
-OCA_MODEL_ID = os.getenv('OCA_MODEL_ID', 'oca/gpt-4.1')
+DEFAULT_OCA_MODE = os.getenv('OCA_MODE', 'internal')
+DEFAULT_INTERNAL_BASE_URL = os.getenv('INTERNAL_OCA_BASE_URL', 'https://code-internal.aiservice.us-chicago-1.oci.oraclecloud.com/20250206/app/litellm')
+DEFAULT_EXTERNAL_BASE_URL = os.getenv('EXTERNAL_OCA_BASE_URL', 'https://code.aiservice.us-chicago-1.oci.oraclecloud.com/20250206/app/litellm')
+DEFAULT_MODEL_ID = os.getenv('OCA_MODEL_ID', 'oca/gpt-4.1')
 
 auth_provider = OCAAuthProvider(OCA_CONFIG)
-oca_client = OCAClient(OCA_BASE_URL, OCA_MODEL_ID)
+
+runtime_settings = {
+    'oca_mode': DEFAULT_OCA_MODE,
+    'oca_base_url': DEFAULT_INTERNAL_BASE_URL if DEFAULT_OCA_MODE == 'internal' else DEFAULT_EXTERNAL_BASE_URL,
+    'model_id': DEFAULT_MODEL_ID
+}
+
+def get_oca_client():
+    """Get OCA client with current runtime settings"""
+    return OCAClient(runtime_settings['oca_base_url'], runtime_settings['model_id'])
 
 conversations: Dict[str, List[Dict[str, str]]] = {}
 
@@ -59,8 +66,9 @@ def index():
     return render_template('index.html', 
                          authenticated=access_token is not None,
                          user_info=user_info,
-                         oca_mode=OCA_MODE,
-                         model_id=OCA_MODEL_ID)
+                         oca_mode=runtime_settings['oca_mode'],
+                         model_id=runtime_settings['model_id'],
+                         oca_base_url=runtime_settings['oca_base_url'])
 
 
 @app.route('/api/auth/status')
@@ -83,13 +91,25 @@ def login():
     if auth_in_progress:
         return jsonify({'error': 'Authentication already in progress'}), 400
     
+    mode = request.args.get('mode', DEFAULT_OCA_MODE)
+    model_id = request.args.get('model_id', DEFAULT_MODEL_ID)
+    base_url = request.args.get('base_url', '')
+    
+    runtime_settings['oca_mode'] = mode
+    runtime_settings['model_id'] = model_id
+    
+    if base_url:
+        runtime_settings['oca_base_url'] = base_url
+    else:
+        runtime_settings['oca_base_url'] = DEFAULT_INTERNAL_BASE_URL if mode == 'internal' else DEFAULT_EXTERNAL_BASE_URL
+    
     try:
         auth_in_progress = True
         
         def handle_oauth_callback(code: str, state: str) -> Dict[str, Any]:
             global loopback_server, auth_in_progress
             try:
-                result = auth_provider.exchange_code_for_tokens(code, state, OCA_MODE)
+                result = auth_provider.exchange_code_for_tokens(code, state, mode)
                 
                 if loopback_server:
                     threading.Timer(2.0, loopback_server.stop).start()
@@ -109,7 +129,7 @@ def login():
         callback_base = loopback_server.start()
         callback_url = f"{callback_base}/auth/oca"
         
-        auth_url = auth_provider.get_auth_url(callback_url, OCA_MODE)
+        auth_url = auth_provider.get_auth_url(callback_url, mode)
         
         threading.Thread(target=lambda: webbrowser.open(str(auth_url)), daemon=True).start()
         
@@ -135,10 +155,33 @@ def list_models():
         return jsonify({'error': 'Not authenticated'}), 401
     
     try:
+        oca_client = get_oca_client()
         models = oca_client.list_models(access_token)
         return jsonify({'models': models})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings', methods=['POST'])
+def update_settings():
+    """Update runtime settings (model ID and base URL)"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    model_id = request.args.get('model_id', '')
+    base_url = request.args.get('base_url', '')
+    
+    if model_id:
+        runtime_settings['model_id'] = model_id
+    
+    if base_url:
+        runtime_settings['oca_base_url'] = base_url
+    
+    return jsonify({
+        'success': True,
+        'settings': runtime_settings
+    })
 
 
 @app.route('/api/auth/logout', methods=['POST'])
@@ -180,6 +223,8 @@ def chat():
             opc_request_id = None
             user_info = auth_provider.get_user_info()
             user_email = user_info.get('email') if user_info else None
+            
+            oca_client = get_oca_client()
             
             for chunk in oca_client.chat_completion(
                 access_token=access_token,
@@ -264,8 +309,9 @@ if __name__ == '__main__':
     print(f"\n{'='*60}")
     print(f"OCA Chat Application Starting")
     print(f"{'='*60}")
-    print(f"Mode: {OCA_MODE}")
-    print(f"Model: {OCA_MODEL_ID}")
+    print(f"Mode: {runtime_settings['oca_mode']}")
+    print(f"Model: {runtime_settings['model_id']}")
+    print(f"Base URL: {runtime_settings['oca_base_url']}")
     print(f"Server: http://localhost:{port}")
     print(f"{'='*60}\n")
     
