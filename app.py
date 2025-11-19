@@ -39,7 +39,7 @@ OCA_BASE_URL = os.getenv(
     f'{OCA_MODE.upper()}_OCA_BASE_URL',
     'https://code-internal.aiservice.us-chicago-1.oci.oraclecloud.com/20250206/app/litellm'
 )
-OCA_MODEL_ID = os.getenv('OCA_MODEL_ID', 'gpt-4o')
+OCA_MODEL_ID = os.getenv('OCA_MODEL_ID', 'oca/gpt-4.1')
 
 auth_provider = OCAAuthProvider(OCA_CONFIG)
 oca_client = OCAClient(OCA_BASE_URL, OCA_MODEL_ID)

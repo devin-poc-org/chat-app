@@ -16,7 +16,7 @@ from openai import OpenAI, OpenAIError
 class OCAClient:
     """Client for Oracle Code Assist API using OpenAI SDK"""
     
-    def __init__(self, base_url: str, model_id: str = "anthropic/claude-3-7-sonnet-20250219"):
+    def __init__(self, base_url: str, model_id: str = "oca/gpt-4.1"):
         self.base_url = base_url.rstrip('/')
         self.model_id = model_id
         self.session_id = self._generate_session_id()
@@ -43,7 +43,6 @@ class OCAClient:
         opc_request_id = self._generate_opc_request_id(task_id, access_token)
         
         headers = {
-            'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json',
             'client': 'OCA-Chat-App',
             'client-version': '1.0.0',
@@ -59,12 +58,11 @@ class OCAClient:
         return headers
     
     def _ensure_client(self, access_token: str) -> OpenAI:
-        """Ensure OpenAI client is initialized"""
-        if not self.client:
-            self.client = OpenAI(
-                base_url=self.base_url,
-                api_key="noop"  # OCA uses Bearer token auth, not API key
-            )
+        """Ensure OpenAI client is initialized with access token"""
+        self.client = OpenAI(
+            base_url=self.base_url,
+            api_key=access_token  # Use access token as API key for proper Authorization header
+        )
         return self.client
     
     def chat_completion(

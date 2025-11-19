@@ -210,8 +210,8 @@ class OCAAuthProvider:
         decoded = jwt.decode(access_token, options={"verify_signature": False})
         user_info = {
             'uid': decoded.get('sub', ''),
-            'email': decoded.get('sub', ''),
-            'display_name': decoded.get('sub', '')
+            'email': decoded.get('email', decoded.get('preferred_username', decoded.get('sub', ''))),
+            'display_name': decoded.get('name', decoded.get('preferred_username', decoded.get('sub', '')))
         }
         
         self._save_tokens({
