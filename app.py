@@ -12,7 +12,7 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 from flask_cors import CORS
 from dotenv import load_dotenv
 from oca_auth import OCAAuthProvider
-from oca_client import OCAClient
+from oca_client_openai import OCAClient
 from loopback_server import LoopbackServer
 
 load_dotenv()
