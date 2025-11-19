@@ -35,11 +35,11 @@ class OCAClient:
         
         return token_hex + task_hex + timestamp_hex + random_hex
     
-    def _create_headers(self, access_token: str, task_id: str) -> Dict[str, str]:
+    def _create_headers(self, access_token: str, task_id: str, user_email: Optional[str] = None) -> Dict[str, str]:
         """Create headers for OCA API requests"""
         opc_request_id = self._generate_opc_request_id(task_id, access_token)
         
-        return {
+        headers = {
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json',
             'client': 'OCA-Chat-App',
@@ -48,6 +48,11 @@ class OCAClient:
             'client-ide-version': '1.0.0',
             'opc-request-id': opc_request_id
         }
+        
+        if user_email:
+            headers['original-principal'] = user_email
+        
+        return headers
     
     def chat_completion(
         self,
@@ -56,7 +61,8 @@ class OCAClient:
         system_prompt: Optional[str] = None,
         stream: bool = True,
         temperature: float = 0.7,
-        max_tokens: int = 4096
+        max_tokens: int = 4096,
+        user_email: Optional[str] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Send chat completion request to OCA API
@@ -73,7 +79,8 @@ class OCAClient:
             Chunks of the response as they arrive
         """
         task_id = self.session_id
-        headers = self._create_headers(access_token, task_id)
+        headers = self._create_headers(access_token, task_id, user_email)
+        opc_request_id = headers['opc-request-id']
         
         api_messages = []
         if system_prompt:
@@ -112,17 +119,21 @@ class OCAClient:
                     error_detail = f"\nError details: {json.dumps(error_body, indent=2)}"
                 except:
                     error_detail = f"\nError body: {response.text}"
-                raise Exception(f"OCA API error (status {response.status_code}): {str(e)}{error_detail}") from e
+                raise Exception(f"OCA API error (status {response.status_code}): {str(e)}{error_detail}\nopc-request-id: {opc_request_id}") from e
             
+            first_chunk = True
             for line in response.iter_lines():
                 if line:
                     line_str = line.decode('utf-8')
                     if line_str.startswith('data: '):
-                        data_str = line_str[6:]  # Remove 'data: ' prefix
+                        data_str = line_str[6:]
                         if data_str.strip() == '[DONE]':
                             break
                         try:
                             chunk = json.loads(data_str)
+                            if first_chunk:
+                                chunk['opc_request_id'] = opc_request_id
+                                first_chunk = False
                             yield chunk
                         except json.JSONDecodeError:
                             continue
@@ -142,8 +153,10 @@ class OCAClient:
                     error_detail = f"\nError details: {json.dumps(error_body, indent=2)}"
                 except:
                     error_detail = f"\nError body: {response.text}"
-                raise Exception(f"OCA API error (status {response.status_code}): {str(e)}{error_detail}") from e
-            yield response.json()
+                raise Exception(f"OCA API error (status {response.status_code}): {str(e)}{error_detail}\nopc-request-id: {opc_request_id}") from e
+            result = response.json()
+            result['opc_request_id'] = opc_request_id
+            yield result
     
     def list_models(self, access_token: str) -> List[Dict[str, Any]]:
         """List available models from OCA API"""

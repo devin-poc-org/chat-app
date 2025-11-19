@@ -177,13 +177,21 @@ def chat():
         try:
             full_response = ""
             usage_data = None
+            opc_request_id = None
+            user_info = auth_provider.get_user_info()
+            user_email = user_info.get('email') if user_info else None
             
             for chunk in oca_client.chat_completion(
                 access_token=access_token,
                 messages=conversation,
                 system_prompt="You are a helpful AI assistant.",
-                stream=True
+                stream=True,
+                user_email=user_email
             ):
+                if 'opc_request_id' in chunk:
+                    opc_request_id = chunk['opc_request_id']
+                    yield f"data: {json.dumps({'type': 'opc_request_id', 'opc_request_id': opc_request_id})}\n\n"
+                
                 if 'choices' in chunk and len(chunk['choices']) > 0:
                     delta = chunk['choices'][0].get('delta', {})
                     content = delta.get('content', '')
@@ -202,7 +210,8 @@ def chat():
             
             completion_data = {
                 'type': 'done',
-                'usage': usage_data
+                'usage': usage_data,
+                'opc_request_id': opc_request_id
             }
             yield f"data: {json.dumps(completion_data)}\n\n"
             
