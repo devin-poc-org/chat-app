@@ -180,13 +180,19 @@ The application provides the following REST API endpoints:
 
 ### Authentication Flow
 
+The application uses a **loopback server approach** (matching Cline's implementation) for secure OAuth2 authentication:
+
 1. User clicks "Login with OCA"
-2. Application generates PKCE code verifier and challenge
-3. User is redirected to Oracle IDCS for authentication
-4. After successful login, IDCS redirects back with authorization code
-5. Application exchanges code for access and refresh tokens
-6. Tokens are stored locally in `tokens.json`
-7. Access tokens are automatically refreshed when needed
+2. Application starts a temporary HTTP server on `127.0.0.1` (ports 48801-48811)
+3. Application generates PKCE code verifier and challenge
+4. Browser opens to Oracle IDCS authentication page with loopback redirect URI
+5. After successful login, IDCS redirects to the loopback server with authorization code
+6. Loopback server exchanges code for access and refresh tokens
+7. Tokens are stored locally in `tokens.json`
+8. Loopback server shuts down and redirects browser back to chat interface
+9. Access tokens are automatically refreshed when needed
+
+**Why loopback server?** The IDCS client is configured to accept redirect URIs on `127.0.0.1` with specific ports (48801-48811), not arbitrary localhost URLs. This matches the authentication pattern used by Cline.
 
 ### Chat Flow
 
@@ -204,6 +210,7 @@ oca-chat-app/
 ├── app.py                 # Flask application and API endpoints
 ├── oca_auth.py           # OCA authentication module
 ├── oca_client.py         # OCA API client
+├── loopback_server.py    # OAuth callback loopback server
 ├── requirements.txt      # Python dependencies
 ├── .env.example          # Example environment configuration
 ├── .env                  # Your environment configuration (not in git)

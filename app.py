@@ -5,12 +5,15 @@ A simple web-based chat interface for Oracle Code Assist
 
 import os
 import json
+import webbrowser
+import threading
 from typing import Dict, Any, List
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
 from oca_auth import OCAAuthProvider
 from oca_client import OCAClient
+from loopback_server import LoopbackServer
 
 load_dotenv()
 
@@ -43,6 +46,9 @@ oca_client = OCAClient(OCA_BASE_URL, OCA_MODEL_ID)
 
 conversations: Dict[str, List[Dict[str, str]]] = {}
 
+loopback_server = None
+auth_in_progress = False
+
 
 @app.route('/')
 def index():
@@ -71,30 +77,52 @@ def auth_status():
 
 @app.route('/api/auth/login')
 def login():
-    """Initiate OAuth2 login flow"""
-    callback_url = url_for('auth_callback', _external=True)
-    auth_url = auth_provider.get_auth_url(callback_url, OCA_MODE)
-    return redirect(auth_url)
-
-
-@app.route('/api/auth/callback')
-def auth_callback():
-    """Handle OAuth2 callback"""
-    code = request.args.get('code')
-    state = request.args.get('state')
-    error = request.args.get('error')
+    """Initiate OAuth2 login flow with loopback server"""
+    global loopback_server, auth_in_progress
     
-    if error:
-        return f"Authentication error: {error}", 400
-    
-    if not code or not state:
-        return "Missing code or state parameter", 400
+    if auth_in_progress:
+        return jsonify({'error': 'Authentication already in progress'}), 400
     
     try:
-        result = auth_provider.exchange_code_for_tokens(code, state, OCA_MODE)
-        return redirect('/')
+        auth_in_progress = True
+        
+        def handle_oauth_callback(code: str, state: str) -> Dict[str, Any]:
+            global loopback_server, auth_in_progress
+            try:
+                result = auth_provider.exchange_code_for_tokens(code, state, OCA_MODE)
+                
+                if loopback_server:
+                    threading.Timer(2.0, loopback_server.stop).start()
+                
+                auth_in_progress = False
+                return {'success': True, 'result': result}
+            except Exception as e:
+                auth_in_progress = False
+                return {'success': False, 'error': str(e)}
+        
+        loopback_server = LoopbackServer(
+            callback_handler=handle_oauth_callback,
+            success_redirect_url='http://localhost:5000'
+        )
+        callback_base = loopback_server.start()
+        callback_url = f"{callback_base}/auth/oca"
+        
+        auth_url = auth_provider.get_auth_url(callback_url, OCA_MODE)
+        
+        threading.Thread(target=lambda: webbrowser.open(str(auth_url)), daemon=True).start()
+        
+        return jsonify({
+            'success': True,
+            'auth_url': str(auth_url),
+            'message': 'Opening browser for authentication...'
+        })
+        
     except Exception as e:
-        return f"Authentication failed: {str(e)}", 500
+        auth_in_progress = False
+        if loopback_server:
+            loopback_server.stop()
+            loopback_server = None
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/auth/logout', methods=['POST'])

@@ -352,8 +352,42 @@
         const conversationId = 'default';
         let isProcessing = false;
 
-        function login() {
-            window.location.href = '/api/auth/login';
+        async function login() {
+            try {
+                const response = await fetch('/api/auth/login');
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Browser will be opened automatically by the server
+                    // Start polling for authentication status
+                    pollAuthStatus();
+                } else {
+                    alert('Failed to initiate login: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                alert('Failed to initiate login: ' + error.message);
+            }
+        }
+
+        function pollAuthStatus() {
+            const pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/auth/status');
+                    const data = await response.json();
+                    
+                    if (data.authenticated) {
+                        clearInterval(pollInterval);
+                        // Reload the page to show authenticated state
+                        window.location.reload();
+                    }
+                } catch (error) {
+                    console.error('Error polling auth status:', error);
+                }
+            }, 500);
+            
+            // Stop polling after 2 minutes
+            setTimeout(() => clearInterval(pollInterval), 120000);
         }
 
         function logout() {
