@@ -103,7 +103,16 @@ class OCAClient:
                 stream=True,
                 timeout=60
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                error_detail = ""
+                try:
+                    error_body = response.json()
+                    error_detail = f"\nError details: {json.dumps(error_body, indent=2)}"
+                except:
+                    error_detail = f"\nError body: {response.text}"
+                raise Exception(f"OCA API error (status {response.status_code}): {str(e)}{error_detail}") from e
             
             for line in response.iter_lines():
                 if line:
@@ -124,8 +133,36 @@ class OCAClient:
                 json=payload,
                 timeout=60
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                error_detail = ""
+                try:
+                    error_body = response.json()
+                    error_detail = f"\nError details: {json.dumps(error_body, indent=2)}"
+                except:
+                    error_detail = f"\nError body: {response.text}"
+                raise Exception(f"OCA API error (status {response.status_code}): {str(e)}{error_detail}") from e
             yield response.json()
+    
+    def list_models(self, access_token: str) -> List[Dict[str, Any]]:
+        """List available models from OCA API"""
+        task_id = self.session_id
+        headers = self._create_headers(access_token, task_id)
+        
+        try:
+            url = f'{self.base_url}/models'
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get('data', [])
+        except Exception as e:
+            print(f"Error listing models: {e}")
+            return []
     
     def calculate_cost(
         self,

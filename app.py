@@ -127,6 +127,20 @@ def login():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/models', methods=['GET'])
+def list_models():
+    """List available OCA models"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        models = oca_client.list_models(access_token)
+        return jsonify({'models': models})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
     """Logout and clear tokens"""
