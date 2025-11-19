@@ -7,13 +7,17 @@ import os
 import json
 import webbrowser
 import threading
-from typing import Dict, Any, List
+import time
+import uuid
+from datetime import datetime
+from typing import Dict, Any, List, Optional
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
 from oca_auth import OCAAuthProvider
 from oca_client_openai import OCAClient
 from loopback_server import LoopbackServer
+from file_handler import FileHandler
 
 load_dotenv()
 
@@ -51,10 +55,65 @@ def get_oca_client():
     """Get OCA client with current runtime settings"""
     return OCAClient(runtime_settings['oca_base_url'], runtime_settings['model_id'])
 
-conversations: Dict[str, List[Dict[str, str]]] = {}
+conversations: Dict[str, Dict[str, Any]] = {}
+api_logs: List[Dict[str, Any]] = []
 
 loopback_server = None
 auth_in_progress = False
+
+file_handler = FileHandler()
+
+
+def add_api_log(log_type: str, data: Dict[str, Any]):
+    """Add entry to API logs"""
+    log_entry = {
+        'id': str(uuid.uuid4()),
+        'timestamp': datetime.now().isoformat(),
+        'type': log_type,
+        'data': data
+    }
+    api_logs.append(log_entry)
+    if len(api_logs) > 1000:
+        api_logs.pop(0)
+
+
+def create_conversation(name: Optional[str] = None) -> str:
+    """Create a new conversation"""
+    conv_id = str(uuid.uuid4())
+    conversations[conv_id] = {
+        'id': conv_id,
+        'name': name or f"Chat {len(conversations) + 1}",
+        'created_at': datetime.now().isoformat(),
+        'messages': [],
+        'file_context': []
+    }
+    return conv_id
+
+
+def retry_with_backoff(func, max_retries=3, initial_delay=1):
+    """Retry function with exponential backoff for 5xx errors and timeouts"""
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            error_str = str(e).lower()
+            is_retryable = (
+                '5' in error_str and ('50' in error_str or '51' in error_str or '52' in error_str or '53' in error_str) or
+                'timeout' in error_str or
+                'connection' in error_str
+            )
+            
+            if not is_retryable or attempt == max_retries - 1:
+                raise
+            
+            delay = initial_delay * (2 ** attempt)
+            add_api_log('retry', {
+                'attempt': attempt + 1,
+                'max_retries': max_retries,
+                'delay': delay,
+                'error': str(e)
+            })
+            time.sleep(delay)
 
 
 @app.route('/')
@@ -62,6 +121,9 @@ def index():
     """Main chat interface"""
     access_token = auth_provider.get_valid_access_token()
     user_info = auth_provider.get_user_info()
+    
+    if access_token and len(conversations) == 0:
+        create_conversation("Default Chat")
     
     return render_template('index.html', 
                          authenticated=access_token is not None,
@@ -201,19 +263,22 @@ def chat():
     
     data = request.json
     user_message = data.get('message', '').strip()
-    conversation_id = data.get('conversation_id', 'default')
+    conversation_id = data.get('conversation_id')
     
     if not user_message:
         return jsonify({'error': 'Message is required'}), 400
     
-    if conversation_id not in conversations:
-        conversations[conversation_id] = []
+    if not conversation_id or conversation_id not in conversations:
+        return jsonify({'error': 'Invalid conversation ID'}), 400
     
     conversation = conversations[conversation_id]
+    messages = conversation['messages']
+    file_context = conversation.get('file_context', [])
     
-    conversation.append({
+    messages.append({
         'role': 'user',
-        'content': user_message
+        'content': user_message,
+        'timestamp': datetime.now().isoformat()
     })
     
     def generate():
@@ -226,13 +291,31 @@ def chat():
             
             oca_client = get_oca_client()
             
-            for chunk in oca_client.chat_completion(
-                access_token=access_token,
-                messages=conversation,
-                system_prompt="You are a helpful AI assistant.",
-                stream=True,
-                user_email=user_email
-            ):
+            messages_to_send = messages.copy()
+            
+            if file_context:
+                context_message = "Files in context:\n\n" + "\n\n".join(file_context)
+                messages_to_send.insert(0, {
+                    'role': 'system',
+                    'content': context_message
+                })
+            
+            add_api_log('chat_request', {
+                'conversation_id': conversation_id,
+                'message_count': len(messages_to_send),
+                'has_file_context': len(file_context) > 0
+            })
+            
+            def make_request():
+                return oca_client.chat_completion(
+                    access_token=access_token,
+                    messages=messages_to_send,
+                    system_prompt="You are a helpful AI assistant.",
+                    stream=True,
+                    user_email=user_email
+                )
+            
+            for chunk in retry_with_backoff(make_request, max_retries=3):
                 if 'opc_request_id' in chunk:
                     opc_request_id = chunk['opc_request_id']
                     yield f"data: {json.dumps({'type': 'opc_request_id', 'opc_request_id': opc_request_id})}\n\n"
@@ -248,9 +331,17 @@ def chat():
                 if 'usage' in chunk:
                     usage_data = chunk['usage']
             
-            conversation.append({
+            messages.append({
                 'role': 'assistant',
-                'content': full_response
+                'content': full_response,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            add_api_log('chat_response', {
+                'conversation_id': conversation_id,
+                'response_length': len(full_response),
+                'usage': usage_data,
+                'opc_request_id': opc_request_id
             })
             
             completion_data = {
@@ -261,6 +352,10 @@ def chat():
             yield f"data: {json.dumps(completion_data)}\n\n"
             
         except Exception as e:
+            add_api_log('chat_error', {
+                'conversation_id': conversation_id,
+                'error': str(e)
+            })
             error_data = {
                 'type': 'error',
                 'error': str(e)
@@ -270,6 +365,42 @@ def chat():
     return Response(generate(), mimetype='text/event-stream')
 
 
+@app.route('/api/conversations', methods=['GET'])
+def list_conversations():
+    """List all conversations"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    conv_list = [
+        {
+            'id': conv['id'],
+            'name': conv['name'],
+            'created_at': conv['created_at'],
+            'message_count': len(conv['messages'])
+        }
+        for conv in conversations.values()
+    ]
+    return jsonify({'conversations': conv_list})
+
+
+@app.route('/api/conversations', methods=['POST'])
+def create_new_conversation():
+    """Create a new conversation"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json or {}
+    name = data.get('name')
+    conv_id = create_conversation(name)
+    
+    return jsonify({
+        'success': True,
+        'conversation': conversations[conv_id]
+    })
+
+
 @app.route('/api/conversations/<conversation_id>', methods=['GET'])
 def get_conversation(conversation_id):
     """Get conversation history"""
@@ -277,13 +408,35 @@ def get_conversation(conversation_id):
     if not access_token:
         return jsonify({'error': 'Not authenticated'}), 401
     
-    conversation = conversations.get(conversation_id, [])
-    return jsonify({'messages': conversation})
+    conversation = conversations.get(conversation_id)
+    if not conversation:
+        return jsonify({'error': 'Conversation not found'}), 404
+    
+    return jsonify({'conversation': conversation})
+
+
+@app.route('/api/conversations/<conversation_id>', methods=['PUT'])
+def update_conversation(conversation_id):
+    """Update conversation name"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if conversation_id not in conversations:
+        return jsonify({'error': 'Conversation not found'}), 404
+    
+    data = request.json or {}
+    name = data.get('name')
+    
+    if name:
+        conversations[conversation_id]['name'] = name
+    
+    return jsonify({'success': True, 'conversation': conversations[conversation_id]})
 
 
 @app.route('/api/conversations/<conversation_id>', methods=['DELETE'])
-def clear_conversation(conversation_id):
-    """Clear conversation history"""
+def delete_conversation(conversation_id):
+    """Delete conversation"""
     access_token = auth_provider.get_valid_access_token()
     if not access_token:
         return jsonify({'error': 'Not authenticated'}), 401
@@ -294,14 +447,106 @@ def clear_conversation(conversation_id):
     return jsonify({'success': True})
 
 
-@app.route('/api/conversations', methods=['GET'])
-def list_conversations():
-    """List all conversation IDs"""
+@app.route('/api/conversations/<conversation_id>/clear', methods=['POST'])
+def clear_conversation_messages(conversation_id):
+    """Clear conversation messages but keep the conversation"""
     access_token = auth_provider.get_valid_access_token()
     if not access_token:
         return jsonify({'error': 'Not authenticated'}), 401
     
-    return jsonify({'conversations': list(conversations.keys())})
+    if conversation_id not in conversations:
+        return jsonify({'error': 'Conversation not found'}), 404
+    
+    conversations[conversation_id]['messages'] = []
+    conversations[conversation_id]['file_context'] = []
+    
+    return jsonify({'success': True})
+
+
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    """Upload and process file"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    conversation_id = request.form.get('conversation_id')
+    
+    if not file.filename:
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not conversation_id or conversation_id not in conversations:
+        return jsonify({'error': 'Invalid conversation ID'}), 400
+    
+    try:
+        file_data = file.read()
+        
+        is_valid, error_msg = file_handler.validate_file(file_data, file.filename)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+        
+        text_content, file_type = file_handler.extract_text_from_file(file_data, file.filename)
+        
+        formatted_content = file_handler.format_file_content_for_model(file.filename, text_content)
+        conversations[conversation_id]['file_context'].append(formatted_content)
+        
+        preview = file_handler.format_file_content_for_chat(file.filename, file_type, text_content)
+        
+        add_api_log('file_upload', {
+            'conversation_id': conversation_id,
+            'filename': file.filename,
+            'file_type': file_type,
+            'size': len(file_data),
+            'text_length': len(text_content)
+        })
+        
+        return jsonify({
+            'success': True,
+            'filename': file.filename,
+            'file_type': file_type,
+            'preview': preview,
+            'text_length': len(text_content)
+        })
+    
+    except Exception as e:
+        add_api_log('file_upload_error', {
+            'conversation_id': conversation_id,
+            'filename': file.filename,
+            'error': str(e)
+        })
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    """Get API logs"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    limit = request.args.get('limit', 100, type=int)
+    log_type = request.args.get('type')
+    
+    filtered_logs = api_logs
+    if log_type:
+        filtered_logs = [log for log in api_logs if log['type'] == log_type]
+    
+    return jsonify({'logs': filtered_logs[-limit:]})
+
+
+@app.route('/api/logs', methods=['DELETE'])
+def clear_logs():
+    """Clear API logs"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    api_logs.clear()
+    return jsonify({'success': True})
 
 
 if __name__ == '__main__':
