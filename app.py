@@ -686,6 +686,40 @@ def delete_mcp_server(server_name):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/mcp/servers/import', methods=['POST'])
+def import_mcp_server():
+    """Import/update an MCP server from JSON config"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    name = data.get('name')
+    config = data.get('config', {})
+    
+    if not name:
+        return jsonify({'error': 'Server name is required'}), 400
+    
+    try:
+        existing_servers = mcp_manager.list_servers()
+        server_exists = name in existing_servers
+        
+        if server_exists:
+            success = mcp_manager.update_server(name, config)
+            if success:
+                return jsonify({'success': True, 'message': f'Server "{name}" updated successfully'})
+            else:
+                return jsonify({'error': f'Failed to update server "{name}"'}), 500
+        else:
+            success = mcp_manager.add_server(name, config)
+            if success:
+                return jsonify({'success': True, 'message': f'Server "{name}" added successfully'})
+            else:
+                return jsonify({'error': f'Failed to add server "{name}"'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/mcp/servers/<server_name>/tools', methods=['GET'])
 def get_mcp_server_tools(server_name):
     """Get tools for an MCP server"""

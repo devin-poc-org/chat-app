@@ -1147,12 +1147,15 @@
                 <div class="mcp-container">
                     <div class="mcp-header">
                         <h2>MCP Server Management</h2>
-                        <button class="btn" onclick="showAddMCPServerModal()">+ Add MCP Server</button>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn" onclick="showImportJSONModal()">📥 Import JSON Config</button>
+                            <button class="btn" onclick="showAddMCPServerModal()">+ Add MCP Server</button>
+                        </div>
                     </div>
                     <div class="mcp-servers-list" id="mcpServersList">
                         <div class="empty-state">
                             <h3>🔌 MCP Servers</h3>
-                            <p>No MCP servers configured yet. Click "Add MCP Server" to get started.</p>
+                            <p>No MCP servers configured yet. Click "Import JSON Config" or "Add MCP Server" to get started.</p>
                         </div>
                     </div>
                 </div>
@@ -1265,6 +1268,47 @@
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn" onclick="approveTool()">✓ Approve & Execute</button>
                 <button class="btn btn-secondary" onclick="rejectTool()">✗ Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="importJSONModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3>📥 Import MCP Servers JSON Config</h3>
+                <button class="modal-close" onclick="closeImportJSONModal()">×</button>
+            </div>
+            
+            <div class="form-group">
+                <label for="jsonConfigInput">Paste your mcpServers JSON configuration:</label>
+                <textarea 
+                    id="jsonConfigInput" 
+                    rows="20" 
+                    placeholder='Paste your JSON config here, e.g.:
+{
+  "mcpServers": {
+    "mcp-atlassian-jira": {
+      "autoApprove": ["jira_get_issue"],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "..."],
+      "env": {
+        "JIRA_URL": "https://jira.example.com/",
+        "JIRA_PERSONAL_TOKEN": "your-token"
+      }
+    }
+  }
+}'
+                    style="font-family: monospace; font-size: 12px; width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                ></textarea>
+                <small>Paste the entire JSON object with "mcpServers" key. All servers will be imported/updated.</small>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn" onclick="importJSONConfig()">Import</button>
+                <button class="btn btn-secondary" onclick="closeImportJSONModal()">Cancel</button>
             </div>
         </div>
     </div>
@@ -2439,6 +2483,91 @@
             `;
             messagesDiv.appendChild(resultMessage);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function showImportJSONModal() {
+            document.getElementById('importJSONModal').classList.add('active');
+            document.getElementById('jsonConfigInput').value = '';
+        }
+
+        function closeImportJSONModal() {
+            document.getElementById('importJSONModal').classList.remove('active');
+        }
+
+        async function importJSONConfig() {
+            const jsonInput = document.getElementById('jsonConfigInput').value.trim();
+            
+            if (!jsonInput) {
+                alert('Please paste a JSON configuration');
+                return;
+            }
+            
+            let config;
+            try {
+                config = JSON.parse(jsonInput);
+            } catch (e) {
+                alert('Invalid JSON format: ' + e.message);
+                return;
+            }
+            
+            if (!config.mcpServers || typeof config.mcpServers !== 'object') {
+                alert('JSON must contain "mcpServers" object');
+                return;
+            }
+            
+            const servers = config.mcpServers;
+            const serverNames = Object.keys(servers);
+            
+            if (serverNames.length === 0) {
+                alert('No servers found in configuration');
+                return;
+            }
+            
+            if (!confirm(`Import ${serverNames.length} server(s)?\n\n${serverNames.join('\n')}`)) {
+                return;
+            }
+            
+            closeImportJSONModal();
+            
+            let successCount = 0;
+            let failCount = 0;
+            const errors = [];
+            
+            for (const serverName of serverNames) {
+                const serverConfig = servers[serverName];
+                
+                try {
+                    const response = await fetch('/api/mcp/servers/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: serverName,
+                            config: serverConfig
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                        errors.push(`${serverName}: ${data.error || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    failCount++;
+                    errors.push(`${serverName}: ${error.message}`);
+                }
+            }
+            
+            await loadMCPServers();
+            
+            let message = `Import complete!\n\nSuccess: ${successCount}\nFailed: ${failCount}`;
+            if (errors.length > 0) {
+                message += '\n\nErrors:\n' + errors.join('\n');
+            }
+            
+            alert(message);
         }
 
         {% if authenticated %}
