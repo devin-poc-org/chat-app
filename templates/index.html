@@ -1491,7 +1491,9 @@
                         </div>
                     `;
                     messagesDiv.appendChild(fileMessage);
-                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    if (isUserNearBottom) {
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    }
                     
                     setTimeout(() => {
                         fileInfo.textContent = 'Max 1MB • Supports: code files, PDF, Word docs';
@@ -1777,7 +1779,9 @@
             messageDiv.appendChild(wrapper);
             messagesDiv.appendChild(messageDiv);
             
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            if (isUserNearBottom) {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
             
             if (index === null) {
                 conversationHistory.push({ role, content, timestamp: timestamp || new Date().toISOString() });
@@ -1796,12 +1800,13 @@
             const contentDiv = messageDiv.querySelector('.message-content');
             const originalContent = conversationHistory[index].content;
             
+            contentDiv.onclick = null;
             contentDiv.classList.add('editing');
             contentDiv.innerHTML = `
                 <textarea class="edit-textarea">${originalContent}</textarea>
                 <div class="edit-actions">
-                    <button class="btn btn-small" onclick="saveEdit(${index})">Save & Resend</button>
-                    <button class="btn btn-secondary btn-small" onclick="cancelEdit(${index})">Cancel</button>
+                    <button class="btn btn-small" onclick="saveEdit(event, ${index})">Save & Resend</button>
+                    <button class="btn btn-secondary btn-small" onclick="cancelEdit(event, ${index})">Cancel</button>
                 </div>
             `;
             
@@ -1810,13 +1815,15 @@
             textarea.setSelectionRange(textarea.value.length, textarea.value.length);
         }
 
-        async function saveEdit(index) {
+        async function saveEdit(event, index) {
+            if (event) event.stopPropagation();
+            
             const messageDiv = document.querySelector(`.message[data-index="${index}"]`);
             const textarea = messageDiv.querySelector('textarea');
             const newContent = textarea.value.trim();
             
             if (!newContent) {
-                cancelEdit(index);
+                cancelEdit(event, index);
                 return;
             }
             
@@ -1840,7 +1847,9 @@
             await sendMessageWithHistory();
         }
 
-        function cancelEdit(index) {
+        function cancelEdit(event, index) {
+            if (event) event.stopPropagation();
+            
             const messageDiv = document.querySelector(`.message[data-index="${index}"]`);
             const contentDiv = messageDiv.querySelector('.message-content');
             const originalContent = conversationHistory[index].content;
@@ -1868,7 +1877,9 @@
                 </div>
             `;
             messagesDiv.appendChild(indicator);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            if (isUserNearBottom) {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
         }
 
         function hideTypingIndicator() {
@@ -1953,6 +1964,30 @@
                             
                             if (data.type === 'opc_request_id') {
                                 opcRequestId = data.opc_request_id;
+                            } else if (data.type === 'tool_request') {
+                                // Model wants to use a tool - show approval modal
+                                hideTypingIndicator();
+                                
+                                pendingToolCall = {
+                                    serverName: data.server_name,
+                                    toolName: data.tool_name,
+                                    functionName: data.function_name,
+                                    toolCallId: data.tool_call_id,
+                                    arguments: data.arguments
+                                };
+                                
+                                // Show tool approval modal
+                                document.getElementById('toolApprovalServerName').textContent = data.server_name;
+                                document.getElementById('toolApprovalToolName').textContent = data.tool_name;
+                                document.getElementById('toolApprovalDescription').textContent = data.description || 'No description available';
+                                document.getElementById('toolApprovalArguments').textContent = JSON.stringify(data.arguments, null, 2);
+                                document.getElementById('toolApprovalModal').classList.add('active');
+                                
+                                // Stop processing this stream - waiting for user approval
+                                isProcessing = false;
+                                input.disabled = false;
+                                document.getElementById('sendButton').disabled = false;
+                                return;
                             } else if (data.type === 'content') {
                                 assistantContent += data.content;
                                 
@@ -1972,7 +2007,9 @@
                                 }
                                 
                                 const messagesDiv = document.getElementById('messages');
-                                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                                if (isUserNearBottom) {
+                                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                                }
                             } else if (data.type === 'error') {
                                 if (!contentDiv) {
                                     contentDiv = addMessage('assistant', `Error: ${data.error}`, null, new Date().toISOString());
@@ -2027,6 +2064,17 @@
 
         let currentMCPServer = null;
         let pendingToolCall = null;
+        let isUserNearBottom = true;
+
+        // Track if user is near bottom for smart scrolling
+        const messagesDiv = document.getElementById('messages');
+        if (messagesDiv) {
+            messagesDiv.addEventListener('scroll', function() {
+                const threshold = 100;
+                const position = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight;
+                isUserNearBottom = position < threshold;
+            });
+        }
 
         async function loadMCPServers() {
             try {
@@ -2264,41 +2312,113 @@
         async function approveTool() {
             if (!pendingToolCall) return;
             
-            const { serverName, toolName, arguments } = pendingToolCall;
+            const { serverName, toolName, functionName, toolCallId, arguments } = pendingToolCall;
+            
+            document.getElementById('toolApprovalModal').classList.remove('active');
+            showTypingIndicator();
             
             try {
-                const response = await fetch(`/api/mcp/servers/${serverName}/tools/${toolName}`, {
+                const response = await fetch('/api/chat/continue-tool', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ arguments })
+                    body: JSON.stringify({
+                        conversation_id: currentConversationId,
+                        server_name: serverName,
+                        tool_name: toolName,
+                        function_name: functionName,
+                        tool_call_id: toolCallId,
+                        arguments: arguments
+                    })
                 });
                 
-                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error('Failed to execute tool and continue chat');
+                }
                 
-                const messagesDiv = document.getElementById('messages');
-                const resultMessage = document.createElement('div');
-                resultMessage.className = 'message assistant';
-                resultMessage.innerHTML = `
-                    <div class="message-avatar">🔧</div>
-                    <div class="message-wrapper">
-                        <div class="message-content">
-                            <strong>Tool Executed: ${toolName}</strong><br>
-                            <strong>Server: ${serverName}</strong><br><br>
-                            ${data.success ? 
-                                `<div style="color: green;">✓ Success</div><pre>${JSON.stringify(data.result, null, 2)}</pre>` :
-                                `<div style="color: red;">✗ Error: ${data.error}</div>`
+                hideTypingIndicator();
+                
+                let assistantContent = '';
+                let opcRequestId = null;
+                let contentDiv = null;
+                let usage = null;
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.slice(6));
+                            
+                            if (data.type === 'opc_request_id') {
+                                opcRequestId = data.opc_request_id;
+                            } else if (data.type === 'content') {
+                                assistantContent += data.content;
+                                
+                                if (!contentDiv) {
+                                    contentDiv = addMessage('assistant', assistantContent, null, new Date().toISOString());
+                                } else {
+                                    contentDiv.innerHTML = renderMarkdown(assistantContent);
+                                    
+                                    const actionsDiv = document.createElement('div');
+                                    actionsDiv.className = 'message-actions';
+                                    const copyBtn = document.createElement('button');
+                                    copyBtn.className = 'copy-btn';
+                                    copyBtn.textContent = 'Copy Response';
+                                    copyBtn.onclick = () => copyFullResponse(copyBtn, assistantContent);
+                                    actionsDiv.appendChild(copyBtn);
+                                    contentDiv.appendChild(actionsDiv);
+                                }
+                                
+                                const messagesDiv = document.getElementById('messages');
+                                if (isUserNearBottom) {
+                                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                                }
+                            } else if (data.type === 'error') {
+                                if (!contentDiv) {
+                                    contentDiv = addMessage('assistant', `Error: ${data.error}`, null, new Date().toISOString());
+                                } else {
+                                    contentDiv.innerHTML = `<span style="color: red;">Error: ${data.error}</span>`;
+                                }
+                            } else if (data.type === 'done') {
+                                usage = data.usage;
+                                
+                                if (opcRequestId || data.opc_request_id) {
+                                    const finalOpcId = opcRequestId || data.opc_request_id;
+                                    const opcDiv = document.createElement('div');
+                                    opcDiv.className = 'opc-request-id';
+                                    opcDiv.innerHTML = `
+                                        <span class="opc-label">opc-request-id:</span>
+                                        <span class="opc-value">${finalOpcId}</span>
+                                        <button class="copy-btn" onclick="copyOpcRequestId(this, '${finalOpcId}')">Copy</button>
+                                    `;
+                                    contentDiv.appendChild(opcDiv);
+                                }
+                                
+                                conversationHistory[conversationHistory.length - 1] = {
+                                    role: 'assistant',
+                                    content: assistantContent,
+                                    timestamp: new Date().toISOString()
+                                };
+                                
+                                updateTokenCounter(usage);
                             }
-                        </div>
-                    </div>
-                `;
-                messagesDiv.appendChild(resultMessage);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                        }
+                    }
+                }
                 
-                document.getElementById('toolApprovalModal').classList.remove('active');
                 pendingToolCall = null;
             } catch (error) {
+                hideTypingIndicator();
                 console.error('Failed to execute tool:', error);
-                alert('Failed to execute tool: ' + error.message);
+                addMessage('assistant', `Error: ${error.message}`, null, new Date().toISOString());
+                pendingToolCall = null;
             }
         }
 

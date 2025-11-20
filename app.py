@@ -308,6 +308,66 @@ def chat():
                 'has_file_context': len(file_context) > 0
             })
             
+            mcp_tools = mcp_manager.build_openai_tools()
+            
+            if mcp_tools:
+                try:
+                    def make_tool_detection_request():
+                        return oca_client.chat_completion(
+                            access_token=access_token,
+                            messages=messages_to_send,
+                            system_prompt="You are a helpful AI assistant.",
+                            stream=False,
+                            user_email=user_email,
+                            tools=mcp_tools,
+                            tool_choice="auto"
+                        )
+                    
+                    tool_detection_chunks = list(retry_with_backoff(make_tool_detection_request, max_retries=3))
+                    if tool_detection_chunks:
+                        tool_response = tool_detection_chunks[0]
+                        
+                        if 'opc_request_id' in tool_response:
+                            opc_request_id = tool_response['opc_request_id']
+                            yield f"data: {json.dumps({'type': 'opc_request_id', 'opc_request_id': opc_request_id})}\n\n"
+                        
+                        if 'choices' in tool_response and len(tool_response['choices']) > 0:
+                            message = tool_response['choices'][0].get('message', {})
+                            tool_calls = message.get('tool_calls', [])
+                            
+                            if tool_calls:
+                                for tool_call in tool_calls:
+                                    function = tool_call.get('function', {})
+                                    function_name = function.get('name', '')
+                                    arguments_str = function.get('arguments', '{}')
+                                    tool_call_id = tool_call.get('id', '')
+                                    
+                                    server_name, tool_name = mcp_manager.parse_tool_function_name(function_name)
+                                    
+                                    if server_name and tool_name:
+                                        server_tools = mcp_manager.get_tools_for_server(server_name)
+                                        tool_desc = next((t.get('description', '') for t in server_tools if t['name'] == tool_name), '')
+                                        
+                                        try:
+                                            arguments = json.loads(arguments_str)
+                                        except:
+                                            arguments = {}
+                                        
+                                        tool_request_data = {
+                                            'type': 'tool_request',
+                                            'server_name': server_name,
+                                            'tool_name': tool_name,
+                                            'function_name': function_name,
+                                            'tool_call_id': tool_call_id,
+                                            'description': tool_desc,
+                                            'arguments': arguments
+                                        }
+                                        yield f"data: {json.dumps(tool_request_data)}\n\n"
+                                        
+                                        return
+                except Exception as e:
+                    print(f"Tool detection failed: {e}")
+            
             def make_request():
                 return oca_client.chat_completion(
                     access_token=access_token,
@@ -689,6 +749,131 @@ def get_all_mcp_tools():
         return jsonify({'tools': all_tools})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/chat/continue-tool', methods=['POST'])
+def continue_tool():
+    """Continue chat after tool execution"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    conversation_id = data.get('conversation_id')
+    server_name = data.get('server_name')
+    tool_name = data.get('tool_name')
+    tool_call_id = data.get('tool_call_id')
+    function_name = data.get('function_name')
+    arguments = data.get('arguments', {})
+    
+    if not all([conversation_id, server_name, tool_name, tool_call_id, function_name]):
+        return jsonify({'error': 'Missing required parameters'}), 400
+    
+    if conversation_id not in conversations:
+        return jsonify({'error': 'Invalid conversation ID'}), 400
+    
+    conversation = conversations[conversation_id]
+    messages = conversation['messages']
+    file_context = conversation.get('file_context', [])
+    
+    def generate():
+        try:
+            user_info = auth_provider.get_user_info()
+            user_email = user_info.get('email') if user_info else None
+            oca_client = get_oca_client()
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            tool_result = loop.run_until_complete(mcp_manager.call_tool(server_name, tool_name, arguments))
+            loop.close()
+            
+            add_api_log('mcp_tool_call', {
+                'conversation_id': conversation_id,
+                'server': server_name,
+                'tool': tool_name,
+                'arguments': arguments,
+                'success': tool_result.get('success', False)
+            })
+            
+            tool_result_content = json.dumps(tool_result.get('result', tool_result.get('error', 'Unknown error')))
+            
+            messages.append({
+                'role': 'tool',
+                'content': tool_result_content,
+                'tool_call_id': tool_call_id,
+                'name': function_name
+            })
+            
+            messages_to_send = messages.copy()
+            
+            if file_context:
+                context_message = "Files in context:\n\n" + "\n\n".join(file_context)
+                messages_to_send.insert(0, {
+                    'role': 'system',
+                    'content': context_message
+                })
+            
+            full_response = ""
+            usage_data = None
+            opc_request_id = None
+            
+            def make_request():
+                return oca_client.chat_completion(
+                    access_token=access_token,
+                    messages=messages_to_send,
+                    system_prompt="You are a helpful AI assistant.",
+                    stream=True,
+                    user_email=user_email
+                )
+            
+            for chunk in retry_with_backoff(make_request, max_retries=3):
+                if 'opc_request_id' in chunk:
+                    opc_request_id = chunk['opc_request_id']
+                    yield f"data: {json.dumps({'type': 'opc_request_id', 'opc_request_id': opc_request_id})}\n\n"
+                
+                if 'choices' in chunk and len(chunk['choices']) > 0:
+                    delta = chunk['choices'][0].get('delta', {})
+                    content = delta.get('content', '')
+                    
+                    if content:
+                        full_response += content
+                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                
+                if 'usage' in chunk:
+                    usage_data = chunk['usage']
+            
+            messages.append({
+                'role': 'assistant',
+                'content': full_response,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            add_api_log('chat_response', {
+                'conversation_id': conversation_id,
+                'response_length': len(full_response),
+                'usage': usage_data,
+                'opc_request_id': opc_request_id
+            })
+            
+            completion_data = {
+                'type': 'done',
+                'usage': usage_data,
+                'opc_request_id': opc_request_id
+            }
+            yield f"data: {json.dumps(completion_data)}\n\n"
+            
+        except Exception as e:
+            add_api_log('chat_error', {
+                'conversation_id': conversation_id,
+                'error': str(e)
+            })
+            error_data = {
+                'type': 'error',
+                'error': str(e)
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
 
 
 if __name__ == '__main__':

@@ -243,6 +243,43 @@ class MCPServerManager:
         if not server:
             return False
         return tool_name in server.autoApprove
+    
+    def build_openai_tools(self) -> List[Dict[str, Any]]:
+        """Build OpenAI tools format from all enabled MCP servers"""
+        openai_tools = []
+        
+        for server_name, server in self.servers.items():
+            if server.disabled:
+                continue
+            
+            tools = self.server_tools.get(server_name, [])
+            for tool in tools:
+                function_name = f"mcp_{server_name}__{tool['name']}"
+                
+                parameters = tool.get('inputSchema', {'type': 'object', 'properties': {}})
+                
+                openai_tool = {
+                    'type': 'function',
+                    'function': {
+                        'name': function_name,
+                        'description': tool.get('description', f"Tool {tool['name']} from {server_name}"),
+                        'parameters': parameters
+                    }
+                }
+                openai_tools.append(openai_tool)
+        
+        return openai_tools
+    
+    def parse_tool_function_name(self, function_name: str) -> tuple:
+        """Parse server and tool name from OpenAI function name"""
+        if not function_name.startswith('mcp_'):
+            return None, None
+        
+        parts = function_name[4:].split('__', 1)
+        if len(parts) != 2:
+            return None, None
+        
+        return parts[0], parts[1]
 
 
 mcp_manager = MCPServerManager()

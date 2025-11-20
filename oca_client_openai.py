@@ -73,7 +73,9 @@ class OCAClient:
         stream: bool = True,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        user_email: Optional[str] = None
+        user_email: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto"
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Send chat completion request to OCA API using OpenAI SDK
@@ -86,6 +88,8 @@ class OCAClient:
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
             user_email: Optional user email for original-principal header
+            tools: Optional list of tools for function calling
+            tool_choice: Tool choice strategy ("auto", "none", or specific tool)
             
         Yields:
             Chunks of the response as they arrive
@@ -105,19 +109,25 @@ class OCAClient:
         api_messages.extend(messages)
         
         try:
+            request_params = {
+                'model': self.model_id,
+                'messages': api_messages,
+                'temperature': temperature,
+                'max_tokens': max_tokens,
+                'extra_headers': headers,
+                'extra_body': {
+                    'litellm_session_id': f'cline-{task_id}'
+                }
+            }
+            
+            if tools:
+                request_params['tools'] = tools
+                request_params['tool_choice'] = tool_choice
+            
             if stream:
-                response = client.chat.completions.create(
-                    model=self.model_id,
-                    messages=api_messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=True,
-                    stream_options={'include_usage': True},
-                    extra_headers=headers,
-                    extra_body={
-                        'litellm_session_id': f'cline-{task_id}'
-                    }
-                )
+                request_params['stream'] = True
+                request_params['stream_options'] = {'include_usage': True}
+                response = client.chat.completions.create(**request_params)
                 
                 first_chunk = True
                 for chunk in response:
@@ -127,17 +137,8 @@ class OCAClient:
                         first_chunk = False
                     yield chunk_dict
             else:
-                response = client.chat.completions.create(
-                    model=self.model_id,
-                    messages=api_messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=False,
-                    extra_headers=headers,
-                    extra_body={
-                        'litellm_session_id': f'cline-{task_id}'
-                    }
-                )
+                request_params['stream'] = False
+                response = client.chat.completions.create(**request_params)
                 result = response.model_dump()
                 result['opc_request_id'] = opc_request_id
                 yield result
