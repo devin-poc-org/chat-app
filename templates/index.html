@@ -716,6 +716,10 @@
             overflow-y: auto;
         }
 
+        .modal-large {
+            max-width: 700px;
+        }
+
         .modal-header {
             display: flex;
             justify-content: space-between;
@@ -810,6 +814,213 @@
             background: rgba(255, 255, 255, 0.3);
         }
 
+        .mcp-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .mcp-header {
+            padding: 20px 30px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .mcp-header h2 {
+            color: #333;
+            font-size: 20px;
+        }
+
+        .mcp-servers-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .mcp-server-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: box-shadow 0.2s;
+        }
+
+        .mcp-server-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .mcp-server-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .mcp-server-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mcp-server-title h3 {
+            color: #333;
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .mcp-server-status {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .mcp-server-status.active {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .mcp-server-status.inactive {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .mcp-server-status.disabled {
+            background: #f5f5f5;
+            color: #999;
+        }
+
+        .mcp-server-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .mcp-server-actions button {
+            padding: 6px 12px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .mcp-server-actions .btn-edit {
+            background: #667eea;
+            color: white;
+        }
+
+        .mcp-server-actions .btn-edit:hover {
+            background: #5568d3;
+        }
+
+        .mcp-server-actions .btn-delete {
+            background: #f44336;
+            color: white;
+        }
+
+        .mcp-server-actions .btn-delete:hover {
+            background: #d32f2f;
+        }
+
+        .mcp-server-actions .btn-discover {
+            background: #4caf50;
+            color: white;
+        }
+
+        .mcp-server-actions .btn-discover:hover {
+            background: #388e3c;
+        }
+
+        .mcp-server-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .mcp-info-item {
+            font-size: 13px;
+        }
+
+        .mcp-info-label {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .mcp-info-value {
+            color: #333;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .mcp-tools-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .mcp-tools-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .mcp-tools-header h4 {
+            color: #333;
+            font-size: 14px;
+            margin: 0;
+        }
+
+        .mcp-tools-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .mcp-tool-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .mcp-tool-name {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 4px;
+        }
+
+        .mcp-tool-description {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .tool-approval-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .tool-approval-info h4 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .tool-approval-info pre {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 height: 100vh;
@@ -899,6 +1110,7 @@
             {% else %}
             <div class="tabs">
                 <div class="tab active" onclick="switchTab('chat')">💬 Chat</div>
+                <div class="tab" onclick="switchTab('mcp')">🔌 MCP Servers</div>
                 <div class="tab" onclick="switchTab('logs')">📋 Logs</div>
             </div>
 
@@ -927,6 +1139,21 @@
                             ></textarea>
                         </div>
                         <button class="btn" id="sendButton" onclick="sendMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="mcpTab">
+                <div class="mcp-container">
+                    <div class="mcp-header">
+                        <h2>MCP Server Management</h2>
+                        <button class="btn" onclick="showAddMCPServerModal()">+ Add MCP Server</button>
+                    </div>
+                    <div class="mcp-servers-list" id="mcpServersList">
+                        <div class="empty-state">
+                            <h3>🔌 MCP Servers</h3>
+                            <p>No MCP servers configured yet. Click "Add MCP Server" to get started.</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -965,6 +1192,79 @@
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn" onclick="saveSettings()">Save Settings</button>
                 <button class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="mcpServerModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="mcpModalTitle">Add MCP Server</h3>
+                <button class="modal-close" onclick="closeMCPServerModal()">×</button>
+            </div>
+            
+            <div class="form-group">
+                <label for="mcpServerName">Server Name</label>
+                <input type="text" id="mcpServerName" placeholder="e.g., mcp-atlassian-jira">
+                <small>Unique identifier for this MCP server</small>
+            </div>
+
+            <div class="form-group">
+                <label for="mcpServerCommand">Command</label>
+                <input type="text" id="mcpServerCommand" placeholder="e.g., docker, uvx, node">
+                <small>Command to execute the MCP server</small>
+            </div>
+
+            <div class="form-group">
+                <label for="mcpServerArgs">Arguments (JSON Array)</label>
+                <textarea id="mcpServerArgs" rows="4" placeholder='["run", "--rm", "-i"]'></textarea>
+                <small>Command arguments as JSON array</small>
+            </div>
+
+            <div class="form-group">
+                <label for="mcpServerEnv">Environment Variables (JSON Object)</label>
+                <textarea id="mcpServerEnv" rows="4" placeholder='{"JIRA_URL": "https://jira.example.com", "JIRA_TOKEN": ""}'></textarea>
+                <small>Environment variables as JSON object</small>
+            </div>
+
+            <div class="form-group">
+                <label for="mcpServerAutoApprove">Auto-Approve Tools (JSON Array)</label>
+                <textarea id="mcpServerAutoApprove" rows="3" placeholder='["tool1", "tool2"]'></textarea>
+                <small>Tools that don't require approval (optional)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="mcpServerTimeout">Timeout (seconds)</label>
+                <input type="number" id="mcpServerTimeout" value="60" min="1">
+                <small>Maximum time to wait for server response</small>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="mcpServerDisabled">
+                    Disabled
+                </label>
+                <small>Check to disable this server</small>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn" onclick="saveMCPServer()">Save Server</button>
+                <button class="btn btn-secondary" onclick="closeMCPServerModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="toolApprovalModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🔧 Tool Execution Request</h3>
+            </div>
+            
+            <div id="toolApprovalContent"></div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn" onclick="approveTool()">✓ Approve & Execute</button>
+                <button class="btn btn-secondary" onclick="rejectTool()">✗ Reject</button>
             </div>
         </div>
     </div>
@@ -1119,6 +1419,8 @@
             
             if (tabName === 'logs') {
                 loadLogs();
+            } else if (tabName === 'mcp') {
+                loadMCPServers();
             }
         }
 
@@ -1721,6 +2023,302 @@
                 this.style.height = 'auto';
                 this.style.height = Math.min(this.scrollHeight, 150) + 'px';
             });
+        }
+
+        let currentMCPServer = null;
+        let pendingToolCall = null;
+
+        async function loadMCPServers() {
+            try {
+                const response = await fetch('/api/mcp/servers');
+                const data = await response.json();
+                
+                const container = document.getElementById('mcpServersList');
+                if (data.servers.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>🔌 MCP Servers</h3>
+                            <p>No MCP servers configured yet. Click "Add MCP Server" to get started.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = data.servers.map(server => `
+                    <div class="mcp-server-card">
+                        <div class="mcp-server-header">
+                            <div class="mcp-server-title">
+                                <h3>${server.name}</h3>
+                                <span class="mcp-server-status ${server.disabled ? 'disabled' : (server.active ? 'active' : 'inactive')}">
+                                    ${server.disabled ? 'Disabled' : (server.active ? 'Active' : 'Inactive')}
+                                </span>
+                            </div>
+                            <div class="mcp-server-actions">
+                                <button class="btn-discover" onclick="discoverTools('${server.name}')">Discover Tools</button>
+                                <button class="btn-edit" onclick="editMCPServer('${server.name}')">Edit</button>
+                                <button class="btn-delete" onclick="deleteMCPServer('${server.name}')">Delete</button>
+                            </div>
+                        </div>
+                        <div class="mcp-server-info">
+                            <div class="mcp-info-item">
+                                <div class="mcp-info-label">Command:</div>
+                                <div class="mcp-info-value">${server.command}</div>
+                            </div>
+                            <div class="mcp-info-item">
+                                <div class="mcp-info-label">Timeout:</div>
+                                <div class="mcp-info-value">${server.timeout}s</div>
+                            </div>
+                            <div class="mcp-info-item">
+                                <div class="mcp-info-label">Tools:</div>
+                                <div class="mcp-info-value">${server.tools_count} discovered</div>
+                            </div>
+                        </div>
+                        <div class="mcp-tools-section" id="tools-${server.name}"></div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load MCP servers:', error);
+            }
+        }
+
+        async function discoverTools(serverName) {
+            try {
+                const toolsSection = document.getElementById(`tools-${serverName}`);
+                toolsSection.innerHTML = '<p style="color: #666;">Discovering tools...</p>';
+                
+                const response = await fetch(`/api/mcp/servers/${serverName}/tools`);
+                const data = await response.json();
+                
+                if (data.tools && data.tools.length > 0) {
+                    toolsSection.innerHTML = `
+                        <div class="mcp-tools-header">
+                            <h4>Available Tools (${data.tools.length})</h4>
+                        </div>
+                        <div class="mcp-tools-list">
+                            ${data.tools.map(tool => `
+                                <div class="mcp-tool-item">
+                                    <div class="mcp-tool-name">${tool.name}</div>
+                                    <div class="mcp-tool-description">${tool.description || 'No description'}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    toolsSection.innerHTML = '<p style="color: #999;">No tools found</p>';
+                }
+            } catch (error) {
+                console.error('Failed to discover tools:', error);
+                const toolsSection = document.getElementById(`tools-${serverName}`);
+                toolsSection.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        function showAddMCPServerModal() {
+            currentMCPServer = null;
+            document.getElementById('mcpModalTitle').textContent = 'Add MCP Server';
+            document.getElementById('mcpServerName').value = '';
+            document.getElementById('mcpServerName').disabled = false;
+            document.getElementById('mcpServerCommand').value = '';
+            document.getElementById('mcpServerArgs').value = '[]';
+            document.getElementById('mcpServerEnv').value = '{}';
+            document.getElementById('mcpServerAutoApprove').value = '[]';
+            document.getElementById('mcpServerTimeout').value = '60';
+            document.getElementById('mcpServerDisabled').checked = false;
+            document.getElementById('mcpServerModal').classList.add('active');
+        }
+
+        async function editMCPServer(serverName) {
+            try {
+                const response = await fetch('/api/mcp/servers');
+                const data = await response.json();
+                const server = data.servers.find(s => s.name === serverName);
+                
+                if (!server) {
+                    alert('Server not found');
+                    return;
+                }
+                
+                currentMCPServer = serverName;
+                document.getElementById('mcpModalTitle').textContent = 'Edit MCP Server';
+                document.getElementById('mcpServerName').value = serverName;
+                document.getElementById('mcpServerName').disabled = true;
+                document.getElementById('mcpServerCommand').value = server.command;
+                document.getElementById('mcpServerArgs').value = JSON.stringify(server.args, null, 2);
+                document.getElementById('mcpServerEnv').value = JSON.stringify(server.env, null, 2);
+                document.getElementById('mcpServerAutoApprove').value = JSON.stringify(server.autoApprove, null, 2);
+                document.getElementById('mcpServerTimeout').value = server.timeout;
+                document.getElementById('mcpServerDisabled').checked = server.disabled;
+                document.getElementById('mcpServerModal').classList.add('active');
+            } catch (error) {
+                console.error('Failed to load server:', error);
+                alert('Failed to load server configuration');
+            }
+        }
+
+        function closeMCPServerModal() {
+            document.getElementById('mcpServerModal').classList.remove('active');
+            currentMCPServer = null;
+        }
+
+        async function saveMCPServer() {
+            const name = document.getElementById('mcpServerName').value.trim();
+            const command = document.getElementById('mcpServerCommand').value.trim();
+            const argsText = document.getElementById('mcpServerArgs').value.trim();
+            const envText = document.getElementById('mcpServerEnv').value.trim();
+            const autoApproveText = document.getElementById('mcpServerAutoApprove').value.trim();
+            const timeout = parseInt(document.getElementById('mcpServerTimeout').value);
+            const disabled = document.getElementById('mcpServerDisabled').checked;
+            
+            if (!name || !command) {
+                alert('Server name and command are required');
+                return;
+            }
+            
+            let args, env, autoApprove;
+            try {
+                args = JSON.parse(argsText || '[]');
+                env = JSON.parse(envText || '{}');
+                autoApprove = JSON.parse(autoApproveText || '[]');
+            } catch (e) {
+                alert('Invalid JSON format in arguments, environment, or auto-approve fields');
+                return;
+            }
+            
+            const config = {
+                command,
+                args,
+                env,
+                autoApprove,
+                timeout,
+                disabled,
+                transportType: 'stdio'
+            };
+            
+            try {
+                let response;
+                if (currentMCPServer) {
+                    response = await fetch(`/api/mcp/servers/${currentMCPServer}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ config })
+                    });
+                } else {
+                    response = await fetch('/api/mcp/servers', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, config })
+                    });
+                }
+                
+                const data = await response.json();
+                if (data.success) {
+                    closeMCPServerModal();
+                    await loadMCPServers();
+                } else {
+                    alert('Failed to save server: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to save server:', error);
+                alert('Failed to save server: ' + error.message);
+            }
+        }
+
+        async function deleteMCPServer(serverName) {
+            if (!confirm(`Delete MCP server "${serverName}"?`)) return;
+            
+            try {
+                const response = await fetch(`/api/mcp/servers/${serverName}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    await loadMCPServers();
+                } else {
+                    alert('Failed to delete server: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to delete server:', error);
+                alert('Failed to delete server: ' + error.message);
+            }
+        }
+
+        function showToolApprovalModal(serverName, toolName, toolDescription, arguments) {
+            pendingToolCall = { serverName, toolName, arguments };
+            
+            const content = document.getElementById('toolApprovalContent');
+            content.innerHTML = `
+                <div class="tool-approval-info">
+                    <h4>Server: ${serverName}</h4>
+                    <h4>Tool: ${toolName}</h4>
+                    <p>${toolDescription || 'No description available'}</p>
+                    <h4>Arguments:</h4>
+                    <pre>${JSON.stringify(arguments, null, 2)}</pre>
+                </div>
+                <p>Do you want to execute this tool?</p>
+            `;
+            
+            document.getElementById('toolApprovalModal').classList.add('active');
+        }
+
+        async function approveTool() {
+            if (!pendingToolCall) return;
+            
+            const { serverName, toolName, arguments } = pendingToolCall;
+            
+            try {
+                const response = await fetch(`/api/mcp/servers/${serverName}/tools/${toolName}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ arguments })
+                });
+                
+                const data = await response.json();
+                
+                const messagesDiv = document.getElementById('messages');
+                const resultMessage = document.createElement('div');
+                resultMessage.className = 'message assistant';
+                resultMessage.innerHTML = `
+                    <div class="message-avatar">🔧</div>
+                    <div class="message-wrapper">
+                        <div class="message-content">
+                            <strong>Tool Executed: ${toolName}</strong><br>
+                            <strong>Server: ${serverName}</strong><br><br>
+                            ${data.success ? 
+                                `<div style="color: green;">✓ Success</div><pre>${JSON.stringify(data.result, null, 2)}</pre>` :
+                                `<div style="color: red;">✗ Error: ${data.error}</div>`
+                            }
+                        </div>
+                    </div>
+                `;
+                messagesDiv.appendChild(resultMessage);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                
+                document.getElementById('toolApprovalModal').classList.remove('active');
+                pendingToolCall = null;
+            } catch (error) {
+                console.error('Failed to execute tool:', error);
+                alert('Failed to execute tool: ' + error.message);
+            }
+        }
+
+        function rejectTool() {
+            document.getElementById('toolApprovalModal').classList.remove('active');
+            pendingToolCall = null;
+            
+            const messagesDiv = document.getElementById('messages');
+            const resultMessage = document.createElement('div');
+            resultMessage.className = 'message assistant';
+            resultMessage.innerHTML = `
+                <div class="message-avatar">🔧</div>
+                <div class="message-wrapper">
+                    <div class="message-content">
+                        <div style="color: orange;">Tool execution rejected by user</div>
+                    </div>
+                </div>
+            `;
+            messagesDiv.appendChild(resultMessage);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
         {% if authenticated %}

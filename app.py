@@ -9,6 +9,7 @@ import webbrowser
 import threading
 import time
 import uuid
+import asyncio
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
@@ -18,6 +19,7 @@ from oca_auth import OCAAuthProvider
 from oca_client_openai import OCAClient
 from loopback_server import LoopbackServer
 from file_handler import FileHandler
+from mcp_manager import mcp_manager
 
 load_dotenv()
 
@@ -547,6 +549,146 @@ def clear_logs():
     
     api_logs.clear()
     return jsonify({'success': True})
+
+
+@app.route('/api/mcp/servers', methods=['GET'])
+def list_mcp_servers():
+    """List all MCP servers"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        servers = mcp_manager.list_servers()
+        return jsonify({'servers': servers})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mcp/servers', methods=['POST'])
+def add_mcp_server():
+    """Add a new MCP server"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    name = data.get('name')
+    config = data.get('config', {})
+    
+    if not name:
+        return jsonify({'error': 'Server name is required'}), 400
+    
+    try:
+        success = mcp_manager.add_server(name, config)
+        if success:
+            return jsonify({'success': True, 'message': 'Server added successfully'})
+        else:
+            return jsonify({'error': 'Failed to add server'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mcp/servers/<server_name>', methods=['PUT'])
+def update_mcp_server(server_name):
+    """Update an MCP server"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    config = data.get('config', {})
+    
+    try:
+        success = mcp_manager.update_server(server_name, config)
+        if success:
+            return jsonify({'success': True, 'message': 'Server updated successfully'})
+        else:
+            return jsonify({'error': 'Server not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mcp/servers/<server_name>', methods=['DELETE'])
+def delete_mcp_server(server_name):
+    """Delete an MCP server"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        success = mcp_manager.delete_server(server_name)
+        if success:
+            return jsonify({'success': True, 'message': 'Server deleted successfully'})
+        else:
+            return jsonify({'error': 'Server not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mcp/servers/<server_name>/tools', methods=['GET'])
+def get_mcp_server_tools(server_name):
+    """Get tools for an MCP server"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        tools = loop.run_until_complete(mcp_manager.discover_tools(server_name))
+        loop.close()
+        
+        return jsonify({'tools': tools})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mcp/servers/<server_name>/tools/<tool_name>', methods=['POST'])
+def call_mcp_tool(server_name, tool_name):
+    """Call an MCP tool"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    arguments = data.get('arguments', {})
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(mcp_manager.call_tool(server_name, tool_name, arguments))
+        loop.close()
+        
+        add_api_log('mcp_tool_call', {
+            'server': server_name,
+            'tool': tool_name,
+            'arguments': arguments,
+            'result': result
+        })
+        
+        return jsonify(result)
+    except Exception as e:
+        add_api_log('mcp_tool_error', {
+            'server': server_name,
+            'tool': tool_name,
+            'error': str(e)
+        })
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mcp/tools', methods=['GET'])
+def get_all_mcp_tools():
+    """Get all tools from all MCP servers"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        all_tools = mcp_manager.get_all_tools()
+        return jsonify({'tools': all_tools})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
