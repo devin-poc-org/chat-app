@@ -10,6 +10,8 @@ import threading
 import time
 import uuid
 import asyncio
+import subprocess
+import queue
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
@@ -69,6 +71,8 @@ auth_in_progress = False
 
 file_handler = FileHandler()
 
+terminal_process = None
+terminal_output_queue = queue.Queue()
 
 def add_api_log(log_type: str, data: Dict[str, Any]):
     """Add entry to API logs"""
@@ -589,7 +593,7 @@ def upload_file():
 
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
-    """Get API logs"""
+    """Get API logs including MCP logs"""
     access_token = auth_provider.get_valid_access_token()
     if not access_token:
         return jsonify({'error': 'Not authenticated'}), 401
@@ -597,21 +601,27 @@ def get_logs():
     limit = request.args.get('limit', 100, type=int)
     log_type = request.args.get('type')
     
-    filtered_logs = api_logs
-    if log_type:
-        filtered_logs = [log for log in api_logs if log['type'] == log_type]
+    mcp_logs = mcp_manager.get_logs(limit=limit)
+    all_logs = api_logs + mcp_logs
     
-    return jsonify({'logs': filtered_logs[-limit:]})
+    all_logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    
+    if log_type:
+        all_logs = [log for log in all_logs if log['type'] == log_type]
+    
+    return jsonify({'logs': all_logs[-limit:]})
 
 
 @app.route('/api/logs', methods=['DELETE'])
 def clear_logs():
-    """Clear API logs"""
+    """Clear API logs and MCP logs"""
     access_token = auth_provider.get_valid_access_token()
     if not access_token:
         return jsonify({'error': 'Not authenticated'}), 401
     
     api_logs.clear()
+    mcp_manager.mcp_logs.clear()
+    mcp_manager.save_logs()
     return jsonify({'success': True})
 
 
@@ -1151,6 +1161,77 @@ def cancel_workflow_run(run_id):
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+def start_terminal():
+    """Start a bash terminal process"""
+    global terminal_process
+    if terminal_process is None or terminal_process.poll() is not None:
+        terminal_process = subprocess.Popen(
+            ['/bin/bash'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+            universal_newlines=False
+        )
+        
+        def read_output():
+            while terminal_process and terminal_process.poll() is None:
+                try:
+                    output = terminal_process.stdout.read(1024)
+                    if output:
+                        terminal_output_queue.put(output.decode('utf-8', errors='replace'))
+                except Exception as e:
+                    print(f"Terminal read error: {e}")
+                    break
+        
+        threading.Thread(target=read_output, daemon=True).start()
+
+
+@app.route('/api/terminal/stream')
+def terminal_stream():
+    """Stream terminal output via SSE"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    start_terminal()
+    
+    def generate():
+        try:
+            while True:
+                try:
+                    output = terminal_output_queue.get(timeout=1.0)
+                    yield f"data: {json.dumps({'output': output})}\n\n"
+                except queue.Empty:
+                    yield f"data: {json.dumps({'ping': True})}\n\n"
+        except GeneratorExit:
+            pass
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+
+@app.route('/api/terminal/input', methods=['POST'])
+def terminal_input():
+    """Send input to terminal"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    input_data = data.get('input', '')
+    
+    if terminal_process and terminal_process.poll() is None:
+        try:
+            terminal_process.stdin.write(input_data.encode('utf-8'))
+            terminal_process.stdin.flush()
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    else:
+        start_terminal()
+        return jsonify({'success': True})
 
 
 if __name__ == '__main__':

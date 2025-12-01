@@ -8,6 +8,9 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script></script>
     
     <style>
         * {
@@ -1112,6 +1115,7 @@
                 <div class="tab active" onclick="switchTab('chat')">💬 Chat</div>
                 <div class="tab" onclick="switchTab('mcp')">🔌 MCP Servers</div>
                 <div class="tab" onclick="switchTab('workflows')">⚙️ Workflows</div>
+                <div class="tab" onclick="switchTab('terminal')">💻 Terminal</div>
                 <div class="tab" onclick="switchTab('logs')">📋 Logs</div>
             </div>
 
@@ -1174,6 +1178,19 @@
                             <p>No workflows created yet. Click "Create Workflow" to get started.</p>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="terminalTab">
+                <div class="terminal-container">
+                    <div class="terminal-header">
+                        <h2>Terminal</h2>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn" onclick="clearTerminal()">Clear</button>
+                            <button class="btn" onclick="reconnectTerminal()">Reconnect</button>
+                        </div>
+                    </div>
+                    <div id="terminal" style="height: calc(100% - 60px); background: #000; padding: 10px;"></div>
                 </div>
             </div>
 
@@ -1610,6 +1627,8 @@ Should I proceed with the review?
                 loadMCPServers();
             } else if (tabName === 'workflows') {
                 loadWorkflows();
+            } else if (tabName === 'terminal') {
+                initTerminal();
             }
         }
 
@@ -2112,6 +2131,15 @@ Should I proceed with the review?
             input.disabled = true;
             document.getElementById('sendButton').disabled = true;
 
+            // Create abort controller for cancellation
+            currentAbortController = new AbortController();
+            
+            // Show cancel button
+            const sendBtn = document.getElementById('sendButton');
+            sendBtn.textContent = 'Cancel';
+            sendBtn.disabled = false;
+            sendBtn.onclick = cancelCurrentRequest;
+
             showTypingIndicator();
 
             try {
@@ -2123,7 +2151,8 @@ Should I proceed with the review?
                     body: JSON.stringify({
                         message: conversationHistory[conversationHistory.length - 1].content,
                         conversation_id: currentConversationId
-                    })
+                    }),
+                    signal: currentAbortController.signal
                 });
 
                 if (!response.ok) {
@@ -2234,12 +2263,27 @@ Should I proceed with the review?
 
             } catch (error) {
                 hideTypingIndicator();
-                addMessage('assistant', `Error: ${error.message}`, null, new Date().toISOString());
+                if (error.name === 'AbortError') {
+                    addMessage('assistant', 'Request cancelled by user', null, new Date().toISOString());
+                } else {
+                    addMessage('assistant', `Error: ${error.message}`, null, new Date().toISOString());
+                }
             } finally {
                 isProcessing = false;
                 input.disabled = false;
-                document.getElementById('sendButton').disabled = false;
+                const sendBtn = document.getElementById('sendButton');
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+                sendBtn.onclick = sendMessage;
+                currentAbortController = null;
                 input.focus();
+            }
+        }
+
+        function cancelCurrentRequest() {
+            if (currentAbortController) {
+                currentAbortController.abort();
+                hideTypingIndicator();
             }
         }
 
@@ -2254,6 +2298,11 @@ Should I proceed with the review?
         let currentMCPServer = null;
         let pendingToolCall = null;
         let isUserNearBottom = true;
+        let currentAbortController = null;
+        let currentMCPAbortController = null;
+        let terminal = null;
+        let terminalFitAddon = null;
+        let terminalEventSource = null;
 
         // Track if user is near bottom for smart scrolling
         const messagesDiv = document.getElementById('messages');
@@ -3119,6 +3168,83 @@ Should I proceed with the review?
             }
             document.getElementById('workflowRunViewerModal').style.display = 'none';
             currentRunId = null;
+        }
+
+        function initTerminal() {
+            if (terminal) {
+                return;
+            }
+
+            const terminalElement = document.getElementById('terminal');
+            if (!terminalElement) return;
+
+            terminal = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                theme: {
+                    background: '#1e1e1e',
+                    foreground: '#d4d4d4'
+                }
+            });
+
+            terminalFitAddon = new FitAddon.FitAddon();
+            terminal.loadAddon(terminalFitAddon);
+            
+            terminal.open(terminalElement);
+            terminalFitAddon.fit();
+
+            window.addEventListener('resize', () => {
+                if (terminalFitAddon) {
+                    terminalFitAddon.fit();
+                }
+            });
+
+            connectTerminal();
+        }
+
+        function connectTerminal() {
+            if (terminalEventSource) {
+                terminalEventSource.close();
+            }
+
+            terminalEventSource = new EventSource('/api/terminal/stream');
+            
+            terminalEventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.output && terminal) {
+                    terminal.write(data.output);
+                }
+            };
+
+            terminalEventSource.onerror = () => {
+                if (terminal) {
+                    terminal.write('\r\n\x1b[31mConnection lost. Click Reconnect to retry.\x1b[0m\r\n');
+                }
+                terminalEventSource.close();
+                terminalEventSource = null;
+            };
+
+            terminal.onData(data => {
+                fetch('/api/terminal/input', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input: data })
+                }).catch(err => console.error('Failed to send input:', err));
+            });
+        }
+
+        function clearTerminal() {
+            if (terminal) {
+                terminal.clear();
+            }
+        }
+
+        function reconnectTerminal() {
+            if (terminal) {
+                terminal.clear();
+                connectTerminal();
+            }
         }
 
         {% if authenticated %}

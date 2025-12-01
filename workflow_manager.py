@@ -5,6 +5,7 @@ import asyncio
 import subprocess
 import threading
 import time
+import shlex
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from queue import Queue
@@ -426,9 +427,13 @@ class WorkflowRunner:
         workspace_dir = run_data['workspace_dir']
         
         if step['type'] == 'shell':
+            try:
+                cmd_args = shlex.split(step['command'])
+            except ValueError:
+                cmd_args = ['/bin/bash', '-c', step['command']]
+            
             result = subprocess.run(
-                step['command'],
-                shell=True,
+                cmd_args,
                 cwd=workspace_dir,
                 capture_output=True,
                 text=True,

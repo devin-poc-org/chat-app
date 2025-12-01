@@ -7,6 +7,8 @@ import os
 import json
 import asyncio
 import subprocess
+import re
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 from contextlib import asynccontextmanager
@@ -38,12 +40,15 @@ class MCPServerConfig:
 class MCPServerManager:
     """Manages MCP servers and their tools"""
     
-    def __init__(self, config_file: str = "mcp_servers.json"):
+    def __init__(self, config_file: str = "mcp_servers.json", log_file: str = "data/mcp_logs.json"):
         self.config_file = config_file
+        self.log_file = log_file
         self.servers: Dict[str, MCPServerConfig] = {}
         self.active_sessions: Dict[str, ClientSession] = {}
         self.server_tools: Dict[str, List[Dict[str, Any]]] = {}
+        self.mcp_logs: List[Dict[str, Any]] = []
         self.load_config()
+        self.load_logs()
     
     def load_config(self):
         """Load MCP server configurations from file"""
@@ -66,6 +71,79 @@ class MCPServerManager:
                         )
             except Exception as e:
                 print(f"Error loading MCP config: {e}")
+    
+    def load_logs(self):
+        """Load MCP logs from file"""
+        if os.path.exists(self.log_file):
+            try:
+                with open(self.log_file, 'r') as f:
+                    self.mcp_logs = json.load(f)
+            except Exception as e:
+                print(f"Error loading MCP logs: {e}")
+                self.mcp_logs = []
+    
+    def save_logs(self):
+        """Save MCP logs to file"""
+        try:
+            os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+            with open(self.log_file, 'w') as f:
+                json.dump(self.mcp_logs, f, indent=2)
+        except Exception as e:
+            print(f"Error saving MCP logs: {e}")
+    
+    def truncate_string(self, text: str, max_length: int = 1000) -> str:
+        """Truncate string to max length"""
+        if len(text) <= max_length:
+            return text
+        return text[:max_length] + f"... (truncated, {len(text) - max_length} more chars)"
+    
+    def mask_secrets(self, data: Any) -> Any:
+        """Mask secrets in data (tokens, passwords, keys)"""
+        if isinstance(data, dict):
+            masked = {}
+            for key, value in data.items():
+                key_lower = key.lower()
+                if any(secret in key_lower for secret in ['token', 'password', 'secret', 'key', 'auth', 'credential']):
+                    if isinstance(value, str) and len(value) > 8:
+                        masked[key] = value[:4] + '****' + value[-4:]
+                    else:
+                        masked[key] = '****'
+                else:
+                    masked[key] = self.mask_secrets(value)
+            return masked
+        elif isinstance(data, list):
+            return [self.mask_secrets(item) for item in data]
+        elif isinstance(data, str):
+            if len(data) > 100 and ('.' in data or data.isalnum()):
+                return data[:20] + '****' + data[-20:]
+            return data
+        else:
+            return data
+    
+    def log_mcp_call(self, server_name: str, tool_name: str, arguments: Dict[str, Any], 
+                     result: Dict[str, Any], duration: float, status: str):
+        """Log an MCP tool call with truncation and secret masking"""
+        log_entry = {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'type': 'mcp',
+            'server': server_name,
+            'tool': tool_name,
+            'arguments': self.truncate_string(json.dumps(self.mask_secrets(arguments))),
+            'result': self.truncate_string(json.dumps(self.mask_secrets(result))),
+            'duration': round(duration, 3),
+            'status': status
+        }
+        
+        self.mcp_logs.append(log_entry)
+        
+        if len(self.mcp_logs) > 1000:
+            self.mcp_logs = self.mcp_logs[-1000:]
+        
+        self.save_logs()
+    
+    def get_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get recent MCP logs"""
+        return self.mcp_logs[-limit:]
     
     def save_config(self):
         """Save MCP server configurations to file"""
@@ -209,21 +287,32 @@ class MCPServerManager:
     
     async def call_tool(self, server_name: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Call a tool on an MCP server"""
+        start_time = datetime.utcnow()
         try:
             async with self.connect_to_server(server_name) as session:
                 result = await session.call_tool(tool_name, arguments)
                 
-                return {
+                response = {
                     'success': True,
                     'result': result.content if hasattr(result, 'content') else str(result),
                     'isError': result.isError if hasattr(result, 'isError') else False
                 }
+                
+                duration = (datetime.utcnow() - start_time).total_seconds()
+                self.log_mcp_call(server_name, tool_name, arguments, response, duration, 'success')
+                
+                return response
         except Exception as e:
-            return {
+            error_response = {
                 'success': False,
                 'error': str(e),
                 'isError': True
             }
+            
+            duration = (datetime.utcnow() - start_time).total_seconds()
+            self.log_mcp_call(server_name, tool_name, arguments, error_response, duration, 'error')
+            
+            return error_response
     
     def get_tools_for_server(self, name: str) -> List[Dict[str, Any]]:
         """Get cached tools for a server"""
