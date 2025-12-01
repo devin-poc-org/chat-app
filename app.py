@@ -20,6 +20,7 @@ from oca_client_openai import OCAClient
 from loopback_server import LoopbackServer
 from file_handler import FileHandler
 from mcp_manager import mcp_manager
+from workflow_manager import WorkflowManager, WorkflowRunner
 
 load_dotenv()
 
@@ -52,6 +53,9 @@ runtime_settings = {
     'oca_base_url': DEFAULT_INTERNAL_BASE_URL if DEFAULT_OCA_MODE == 'internal' else DEFAULT_EXTERNAL_BASE_URL,
     'model_id': DEFAULT_MODEL_ID
 }
+
+workflow_manager = WorkflowManager()
+workflow_runner = None
 
 def get_oca_client():
     """Get OCA client with current runtime settings"""
@@ -910,6 +914,245 @@ def continue_tool():
     return Response(generate(), mimetype='text/event-stream')
 
 
+@app.route('/api/workflows', methods=['GET'])
+def list_workflows():
+    """List all workflows"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        workflows = workflow_manager.list_workflows()
+        return jsonify({'workflows': workflows})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/<workflow_name>', methods=['GET'])
+def get_workflow(workflow_name):
+    """Get a specific workflow"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        workflow = workflow_manager.get_workflow(workflow_name)
+        if workflow:
+            return jsonify(workflow)
+        else:
+            return jsonify({'error': 'Workflow not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows', methods=['POST'])
+def create_workflow():
+    """Create a new workflow"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    name = data.get('name')
+    content = data.get('content', '')
+    
+    if not name:
+        return jsonify({'error': 'Workflow name is required'}), 400
+    
+    try:
+        success = workflow_manager.save_workflow(name, content)
+        if success:
+            return jsonify({'success': True, 'message': 'Workflow created successfully'})
+        else:
+            return jsonify({'error': 'Failed to create workflow'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/<workflow_name>', methods=['PUT'])
+def update_workflow(workflow_name):
+    """Update a workflow"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    content = data.get('content', '')
+    
+    try:
+        success = workflow_manager.save_workflow(workflow_name, content)
+        if success:
+            return jsonify({'success': True, 'message': 'Workflow updated successfully'})
+        else:
+            return jsonify({'error': 'Failed to update workflow'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/<workflow_name>', methods=['DELETE'])
+def delete_workflow(workflow_name):
+    """Delete a workflow"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        success = workflow_manager.delete_workflow(workflow_name)
+        if success:
+            return jsonify({'success': True, 'message': 'Workflow deleted successfully'})
+        else:
+            return jsonify({'error': 'Workflow not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/<workflow_name>/run', methods=['POST'])
+def run_workflow(workflow_name):
+    """Start a workflow run"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    params = data.get('params', {})
+    
+    try:
+        run_id = workflow_manager.create_run(workflow_name, params)
+        
+        global workflow_runner
+        if workflow_runner is None:
+            workflow_runner = WorkflowRunner(workflow_manager, mcp_manager, get_oca_client(), auth_provider)
+        
+        workflow_runner.start_run(run_id)
+        
+        return jsonify({'success': True, 'run_id': run_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/runs/<run_id>', methods=['GET'])
+def get_workflow_run(run_id):
+    """Get workflow run details"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        run_data = workflow_manager.get_run(run_id)
+        if run_data:
+            return jsonify(run_data)
+        else:
+            return jsonify({'error': 'Run not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/runs', methods=['GET'])
+def list_workflow_runs():
+    """List all workflow runs"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    workflow_name = request.args.get('workflow_name')
+    
+    try:
+        runs = workflow_manager.list_runs(workflow_name)
+        return jsonify({'runs': runs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/runs/<run_id>/stream', methods=['GET'])
+def stream_workflow_run(run_id):
+    """Stream workflow run events via SSE"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    def generate():
+        global workflow_runner
+        if workflow_runner is None:
+            yield f"data: {json.dumps({'type': 'error', 'error': 'Workflow runner not initialized'})}\n\n"
+            return
+        
+        try:
+            for event in workflow_runner.get_events(run_id):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+
+@app.route('/api/workflows/runs/<run_id>/approve', methods=['POST'])
+def approve_workflow_step(run_id):
+    """Approve or reject a workflow step"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    step_index = data.get('step_index')
+    approved = data.get('approved', False)
+    
+    if step_index is None:
+        return jsonify({'error': 'step_index is required'}), 400
+    
+    try:
+        global workflow_runner
+        if workflow_runner is None:
+            return jsonify({'error': 'Workflow runner not initialized'}), 500
+        
+        workflow_runner.approve_step(run_id, step_index, approved)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/runs/<run_id>/answer', methods=['POST'])
+def answer_workflow_question(run_id):
+    """Answer a workflow followup question"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    approval_key = data.get('approval_key')
+    response = data.get('response', '')
+    
+    if not approval_key:
+        return jsonify({'error': 'approval_key is required'}), 400
+    
+    try:
+        global workflow_runner
+        if workflow_runner is None:
+            return jsonify({'error': 'Workflow runner not initialized'}), 500
+        
+        workflow_runner.answer_question(approval_key, response)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflows/runs/<run_id>/cancel', methods=['POST'])
+def cancel_workflow_run(run_id):
+    """Cancel a workflow run"""
+    access_token = auth_provider.get_valid_access_token()
+    if not access_token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        global workflow_runner
+        if workflow_runner is None:
+            return jsonify({'error': 'Workflow runner not initialized'}), 500
+        
+        workflow_runner.cancel_run(run_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.getenv('FLASK_PORT', 5000))
     print(f"\n{'='*60}")
@@ -920,5 +1163,7 @@ if __name__ == '__main__':
     print(f"Base URL: {runtime_settings['oca_base_url']}")
     print(f"Server: http://localhost:{port}")
     print(f"{'='*60}\n")
+    
+    workflow_runner = WorkflowRunner(workflow_manager, mcp_manager, get_oca_client(), auth_provider)
     
     app.run(host='0.0.0.0', port=port, debug=True)

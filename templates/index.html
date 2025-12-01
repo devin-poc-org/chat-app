@@ -1111,6 +1111,7 @@
             <div class="tabs">
                 <div class="tab active" onclick="switchTab('chat')">💬 Chat</div>
                 <div class="tab" onclick="switchTab('mcp')">🔌 MCP Servers</div>
+                <div class="tab" onclick="switchTab('workflows')">⚙️ Workflows</div>
                 <div class="tab" onclick="switchTab('logs')">📋 Logs</div>
             </div>
 
@@ -1156,6 +1157,21 @@
                         <div class="empty-state">
                             <h3>🔌 MCP Servers</h3>
                             <p>No MCP servers configured yet. Click "Import JSON Config" or "Add MCP Server" to get started.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="workflowsTab">
+                <div class="workflow-container">
+                    <div class="workflow-header">
+                        <h2>Workflow Management</h2>
+                        <button class="btn" onclick="showCreateWorkflowModal()">+ Create Workflow</button>
+                    </div>
+                    <div class="workflow-list" id="workflowList">
+                        <div class="empty-state">
+                            <h3>⚙️ Workflows</h3>
+                            <p>No workflows created yet. Click "Create Workflow" to get started.</p>
                         </div>
                     </div>
                 </div>
@@ -1313,6 +1329,133 @@
         </div>
     </div>
 
+    <div class="modal" id="workflowModal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3 id="workflowModalTitle">Create Workflow</h3>
+                <button class="modal-close" onclick="closeWorkflowModal()">×</button>
+            </div>
+            
+            <div class="form-group">
+                <label for="workflowName">Workflow Name</label>
+                <input type="text" id="workflowName" placeholder="e.g., pr-review, git-analysis">
+                <small>Use lowercase with hyphens (e.g., my-workflow)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="workflowContent">Workflow Content (Markdown)</label>
+                <textarea 
+                    id="workflowContent" 
+                    rows="20" 
+                    placeholder='Write your workflow in markdown format. Example:
+
+# PR Review Workflow
+
+Review the pull request and provide feedback.
+
+## Step 1: Clone Repository
+```bash
+git clone {{params.repo_url}}
+cd {{params.repo_name}}
+```
+
+## Step 2: Get Jira Ticket
+<mcp_tool server="jira" tool="jira_get_issue">
+{
+  "issue_key": "{{params.jira_ticket}}"
+}
+</mcp_tool>
+
+## Step 3: Ask for Approval
+<ask_followup_question>
+Should I proceed with the review?
+</ask_followup_question>
+'
+                    style="font-family: monospace; font-size: 13px; width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                ></textarea>
+                <small>Supports: bash code blocks, &lt;mcp_tool&gt;, &lt;git_clone&gt;, &lt;read_file&gt;, &lt;search_files&gt;, &lt;ask_followup_question&gt;, and parameter templates {{params.key}}</small>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn" onclick="saveWorkflow()">Save Workflow</button>
+                <button class="btn btn-secondary" onclick="closeWorkflowModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="runWorkflowModal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3>Run Workflow: <span id="runWorkflowName"></span></h3>
+                <button class="modal-close" onclick="closeRunWorkflowModal()">×</button>
+            </div>
+            
+            <div id="workflowParamsForm">
+                <p>Enter parameters for this workflow:</p>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn" onclick="startWorkflowRun()">Start Workflow</button>
+                <button class="btn btn-secondary" onclick="closeRunWorkflowModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="workflowRunViewerModal">
+        <div class="modal-content" style="max-width: 1000px; max-height: 90vh;">
+            <div class="modal-header">
+                <h3>Workflow Run: <span id="viewerWorkflowName"></span></h3>
+                <button class="modal-close" onclick="closeWorkflowRunViewer()">×</button>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <strong>Status:</strong> <span id="runStatus" style="padding: 4px 8px; border-radius: 4px; font-weight: bold;"></span>
+                <button class="btn btn-secondary" onclick="cancelWorkflowRun()" id="cancelRunBtn" style="margin-left: 10px; display: none;">Cancel Run</button>
+            </div>
+
+            <div id="workflowStepsContainer" style="max-height: 60vh; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 15px; background: #f9f9f9;">
+                <div class="empty-state">
+                    <p>Waiting for workflow to start...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="workflowApprovalModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚠️ Approval Required</h3>
+            </div>
+            
+            <div id="approvalContent"></div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn" onclick="approveWorkflowStep()">✓ Approve</button>
+                <button class="btn btn-secondary" onclick="rejectWorkflowStep()">✗ Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="workflowQuestionModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>❓ Question</h3>
+            </div>
+            
+            <div id="questionContent"></div>
+
+            <div class="form-group">
+                <label for="questionResponse">Your Response:</label>
+                <textarea id="questionResponse" rows="4" placeholder="Enter your response..."></textarea>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn" onclick="answerWorkflowQuestion()">Submit Answer</button>
+                <button class="btn btn-secondary" onclick="closeWorkflowQuestionModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentConversationId = null;
         let conversations = [];
@@ -1465,6 +1608,8 @@
                 loadLogs();
             } else if (tabName === 'mcp') {
                 loadMCPServers();
+            } else if (tabName === 'workflows') {
+                loadWorkflows();
             }
         }
 
@@ -2568,6 +2713,412 @@
             }
             
             alert(message);
+        }
+
+        // Workflow Management
+        let currentWorkflowName = null;
+        let currentRunId = null;
+        let workflowEventSource = null;
+        let currentApprovalStepIndex = null;
+        let currentApprovalKey = null;
+
+        async function loadWorkflows() {
+            try {
+                const response = await fetch('/api/workflows');
+                const data = await response.json();
+                
+                const container = document.getElementById('workflowList');
+                if (data.workflows.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>⚙️ Workflows</h3>
+                            <p>No workflows created yet. Click "Create Workflow" to get started.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = data.workflows.map(workflow => `
+                    <div class="workflow-card">
+                        <div class="workflow-header">
+                            <h3>${workflow.name}</h3>
+                            <div class="workflow-actions">
+                                <button class="btn" onclick="showRunWorkflowModal('${workflow.name}')">▶ Run</button>
+                                <button class="btn-edit" onclick="editWorkflow('${workflow.name}')">Edit</button>
+                                <button class="btn-delete" onclick="deleteWorkflow('${workflow.name}')">Delete</button>
+                            </div>
+                        </div>
+                        <div class="workflow-info">
+                            <div class="workflow-meta">
+                                <span>Created: ${new Date(workflow.created_at).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load workflows:', error);
+            }
+        }
+
+        function showCreateWorkflowModal() {
+            currentWorkflowName = null;
+            document.getElementById('workflowModalTitle').textContent = 'Create Workflow';
+            document.getElementById('workflowName').value = '';
+            document.getElementById('workflowContent').value = '';
+            document.getElementById('workflowModal').style.display = 'flex';
+        }
+
+        async function editWorkflow(name) {
+            try {
+                const response = await fetch(`/api/workflows/${name}`);
+                const workflow = await response.json();
+                
+                currentWorkflowName = name;
+                document.getElementById('workflowModalTitle').textContent = 'Edit Workflow';
+                document.getElementById('workflowName').value = name;
+                document.getElementById('workflowName').disabled = true;
+                document.getElementById('workflowContent').value = workflow.content;
+                document.getElementById('workflowModal').style.display = 'flex';
+            } catch (error) {
+                console.error('Failed to load workflow:', error);
+                alert('Failed to load workflow');
+            }
+        }
+
+        async function saveWorkflow() {
+            const name = document.getElementById('workflowName').value.trim();
+            const content = document.getElementById('workflowContent').value;
+            
+            if (!name) {
+                alert('Please enter a workflow name');
+                return;
+            }
+            
+            try {
+                const url = currentWorkflowName ? `/api/workflows/${currentWorkflowName}` : '/api/workflows';
+                const method = currentWorkflowName ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, content })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    closeWorkflowModal();
+                    await loadWorkflows();
+                } else {
+                    alert('Failed to save workflow: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to save workflow:', error);
+                alert('Failed to save workflow');
+            }
+        }
+
+        function closeWorkflowModal() {
+            document.getElementById('workflowModal').style.display = 'none';
+            document.getElementById('workflowName').disabled = false;
+            currentWorkflowName = null;
+        }
+
+        async function deleteWorkflow(name) {
+            if (!confirm(`Delete workflow "${name}"?`)) return;
+            
+            try {
+                const response = await fetch(`/api/workflows/${name}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    await loadWorkflows();
+                } else {
+                    alert('Failed to delete workflow: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to delete workflow:', error);
+                alert('Failed to delete workflow');
+            }
+        }
+
+        async function showRunWorkflowModal(name) {
+            currentWorkflowName = name;
+            document.getElementById('runWorkflowName').textContent = name;
+            
+            // For now, show a simple parameter form
+            // In a full implementation, we'd parse the workflow to extract parameter requirements
+            document.getElementById('workflowParamsForm').innerHTML = `
+                <p>Enter parameters as JSON:</p>
+                <textarea id="workflowParams" rows="6" placeholder='{\n  "repo_url": "https://github.com/...",\n  "jira_ticket": "AICODE-123"\n}'></textarea>
+            `;
+            
+            document.getElementById('runWorkflowModal').style.display = 'flex';
+        }
+
+        function closeRunWorkflowModal() {
+            document.getElementById('runWorkflowModal').style.display = 'none';
+            currentWorkflowName = null;
+        }
+
+        async function startWorkflowRun() {
+            const paramsText = document.getElementById('workflowParams').value.trim();
+            let params = {};
+            
+            if (paramsText) {
+                try {
+                    params = JSON.parse(paramsText);
+                } catch (error) {
+                    alert('Invalid JSON parameters');
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`/api/workflows/${currentWorkflowName}/run`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ params })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentRunId = data.run_id;
+                    closeRunWorkflowModal();
+                    showWorkflowRunViewer(data.run_id);
+                } else {
+                    alert('Failed to start workflow: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to start workflow:', error);
+                alert('Failed to start workflow');
+            }
+        }
+
+        function showWorkflowRunViewer(runId) {
+            currentRunId = runId;
+            document.getElementById('viewerWorkflowName').textContent = currentWorkflowName;
+            document.getElementById('runStatus').textContent = 'Running';
+            document.getElementById('runStatus').style.backgroundColor = '#ffc107';
+            document.getElementById('runStatus').style.color = '#000';
+            document.getElementById('cancelRunBtn').style.display = 'inline-block';
+            document.getElementById('workflowStepsContainer').innerHTML = '<p>Connecting to workflow stream...</p>';
+            document.getElementById('workflowRunViewerModal').style.display = 'flex';
+            
+            // Start SSE stream
+            streamWorkflowRun(runId);
+        }
+
+        function streamWorkflowRun(runId) {
+            if (workflowEventSource) {
+                workflowEventSource.close();
+            }
+            
+            workflowEventSource = new EventSource(`/api/workflows/runs/${runId}/stream`);
+            
+            workflowEventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleWorkflowEvent(data);
+            };
+            
+            workflowEventSource.onerror = function(error) {
+                console.error('SSE error:', error);
+                workflowEventSource.close();
+                workflowEventSource = null;
+            };
+        }
+
+        function handleWorkflowEvent(event) {
+            const container = document.getElementById('workflowStepsContainer');
+            
+            switch (event.type) {
+                case 'run_started':
+                    container.innerHTML = '<div class="workflow-log">Workflow started...</div>';
+                    break;
+                    
+                case 'step_started':
+                    const stepDiv = document.createElement('div');
+                    stepDiv.className = 'workflow-step';
+                    stepDiv.id = `step-${event.step_index}`;
+                    stepDiv.innerHTML = `
+                        <div class="step-header">
+                            <strong>Step ${event.step_index + 1}:</strong> ${event.step_type}
+                            <span class="step-status running">Running...</span>
+                        </div>
+                        <div class="step-logs" id="step-logs-${event.step_index}"></div>
+                    `;
+                    container.appendChild(stepDiv);
+                    break;
+                    
+                case 'step_log':
+                    const logsDiv = document.getElementById(`step-logs-${event.step_index}`);
+                    if (logsDiv) {
+                        const logEntry = document.createElement('div');
+                        logEntry.className = 'log-entry';
+                        logEntry.textContent = event.message;
+                        logsDiv.appendChild(logEntry);
+                    }
+                    break;
+                    
+                case 'step_succeeded':
+                    const successStep = document.getElementById(`step-${event.step_index}`);
+                    if (successStep) {
+                        const statusSpan = successStep.querySelector('.step-status');
+                        statusSpan.textContent = 'Success';
+                        statusSpan.className = 'step-status success';
+                    }
+                    break;
+                    
+                case 'step_failed':
+                    const failedStep = document.getElementById(`step-${event.step_index}`);
+                    if (failedStep) {
+                        const statusSpan = failedStep.querySelector('.step-status');
+                        statusSpan.textContent = 'Failed';
+                        statusSpan.className = 'step-status failed';
+                        const logsDiv = document.getElementById(`step-logs-${event.step_index}`);
+                        if (logsDiv) {
+                            const errorEntry = document.createElement('div');
+                            errorEntry.className = 'log-entry error';
+                            errorEntry.textContent = 'Error: ' + event.error;
+                            logsDiv.appendChild(errorEntry);
+                        }
+                    }
+                    break;
+                    
+                case 'approval_needed':
+                    currentApprovalStepIndex = event.step_index;
+                    showWorkflowApprovalModal(event);
+                    break;
+                    
+                case 'question_asked':
+                    currentApprovalKey = event.approval_key;
+                    showWorkflowQuestionModal(event);
+                    break;
+                    
+                case 'step_rejected':
+                    const rejectedStep = document.getElementById(`step-${event.step_index}`);
+                    if (rejectedStep) {
+                        const statusSpan = rejectedStep.querySelector('.step-status');
+                        statusSpan.textContent = 'Rejected';
+                        statusSpan.className = 'step-status failed';
+                    }
+                    break;
+                    
+                case 'run_completed':
+                    document.getElementById('runStatus').textContent = event.status;
+                    if (event.status === 'succeeded') {
+                        document.getElementById('runStatus').style.backgroundColor = '#4caf50';
+                        document.getElementById('runStatus').style.color = '#fff';
+                    } else {
+                        document.getElementById('runStatus').style.backgroundColor = '#f44336';
+                        document.getElementById('runStatus').style.color = '#fff';
+                    }
+                    document.getElementById('cancelRunBtn').style.display = 'none';
+                    if (workflowEventSource) {
+                        workflowEventSource.close();
+                        workflowEventSource = null;
+                    }
+                    break;
+                    
+                case 'error':
+                    alert('Workflow error: ' + event.error);
+                    break;
+            }
+            
+            // Auto-scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function showWorkflowApprovalModal(event) {
+            document.getElementById('approvalContent').innerHTML = `
+                <p><strong>Step ${event.step_index + 1} requires approval:</strong></p>
+                <p>Type: ${event.step_type}</p>
+                <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto;">${JSON.stringify(event.step_data, null, 2)}</pre>
+            `;
+            document.getElementById('workflowApprovalModal').style.display = 'flex';
+        }
+
+        async function approveWorkflowStep() {
+            try {
+                await fetch(`/api/workflows/runs/${currentRunId}/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step_index: currentApprovalStepIndex, approved: true })
+                });
+                document.getElementById('workflowApprovalModal').style.display = 'none';
+            } catch (error) {
+                console.error('Failed to approve step:', error);
+                alert('Failed to approve step');
+            }
+        }
+
+        async function rejectWorkflowStep() {
+            try {
+                await fetch(`/api/workflows/runs/${currentRunId}/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step_index: currentApprovalStepIndex, approved: false })
+                });
+                document.getElementById('workflowApprovalModal').style.display = 'none';
+            } catch (error) {
+                console.error('Failed to reject step:', error);
+                alert('Failed to reject step');
+            }
+        }
+
+        function showWorkflowQuestionModal(event) {
+            document.getElementById('questionContent').innerHTML = `
+                <p><strong>Question:</strong></p>
+                <p>${event.question}</p>
+            `;
+            document.getElementById('questionResponse').value = '';
+            document.getElementById('workflowQuestionModal').style.display = 'flex';
+        }
+
+        async function answerWorkflowQuestion() {
+            const response = document.getElementById('questionResponse').value.trim();
+            
+            if (!response) {
+                alert('Please enter a response');
+                return;
+            }
+            
+            try {
+                await fetch(`/api/workflows/runs/${currentRunId}/answer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ approval_key: currentApprovalKey, response })
+                });
+                document.getElementById('workflowQuestionModal').style.display = 'none';
+            } catch (error) {
+                console.error('Failed to answer question:', error);
+                alert('Failed to answer question');
+            }
+        }
+
+        function closeWorkflowQuestionModal() {
+            document.getElementById('workflowQuestionModal').style.display = 'none';
+        }
+
+        async function cancelWorkflowRun() {
+            if (!confirm('Cancel this workflow run?')) return;
+            
+            try {
+                await fetch(`/api/workflows/runs/${currentRunId}/cancel`, { method: 'POST' });
+            } catch (error) {
+                console.error('Failed to cancel workflow:', error);
+                alert('Failed to cancel workflow');
+            }
+        }
+
+        function closeWorkflowRunViewer() {
+            if (workflowEventSource) {
+                workflowEventSource.close();
+                workflowEventSource = null;
+            }
+            document.getElementById('workflowRunViewerModal').style.display = 'none';
+            currentRunId = null;
         }
 
         {% if authenticated %}
