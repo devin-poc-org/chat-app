@@ -1364,7 +1364,7 @@
                 <textarea 
                     id="workflowContent" 
                     rows="20" 
-                    placeholder='Write your workflow in markdown format. Example:
+                    placeholder='{% raw %}Write your workflow in markdown format. Example:
 
 # PR Review Workflow
 
@@ -1387,10 +1387,10 @@ cd {{params.repo_name}}
 <ask_followup_question>
 Should I proceed with the review?
 </ask_followup_question>
-'
+{% endraw %}'
                     style="font-family: monospace; font-size: 13px; width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"
                 ></textarea>
-                <small>Supports: bash code blocks, &lt;mcp_tool&gt;, &lt;git_clone&gt;, &lt;read_file&gt;, &lt;search_files&gt;, &lt;ask_followup_question&gt;, and parameter templates {{params.key}}</small>
+                <small>Supports: bash code blocks, &lt;mcp_tool&gt;, &lt;git_clone&gt;, &lt;read_file&gt;, &lt;search_files&gt;, &lt;ask_followup_question&gt;, and parameter templates {% raw %}{{params.key}}{% endraw %}</small>
             </div>
 
             <div style="display: flex; gap: 10px; margin-top: 20px;">
